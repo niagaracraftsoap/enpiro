@@ -5,9 +5,9 @@ from django.utils import timezone
 from .semantic import (
     AssessmentCheck,
     create_air_quality_assessment,
-    create_environmental_observation,
+    create_quick_check,
     decode_air_quality_assessment,
-    decode_environmental_observation,
+    decode_quick_check,
 )
 
 
@@ -18,20 +18,20 @@ def broadcast(value):
     )
 
 
-def save_environmental_observation(
+def save_quick_check(
     *,
     observed_at=None,
     temperature_c,
     relative_humidity,
     pressure_hpa,
 ):
-    term = create_environmental_observation(
+    term = create_quick_check(
         observed_at or timezone.now(),
         temperature_c,
         relative_humidity,
         pressure_hpa,
     )
-    broadcast(decode_environmental_observation(term))
+    broadcast(decode_quick_check(term))
     return term
 
 

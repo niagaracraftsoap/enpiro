@@ -1,10 +1,10 @@
 from django.contrib import admin
 
-from .models import AirQualityAssessment, EnvironmentalObservation
+from .models import AirQualityAssessment, QuickCheck
 
 
-@admin.register(EnvironmentalObservation)
-class EnvironmentalObservationAdmin(admin.ModelAdmin):
+@admin.register(QuickCheck)
+class QuickCheckAdmin(admin.ModelAdmin):
     list_display = ("id", "observed_at", "temperature", "humidity", "pressure")
 
     @admin.display

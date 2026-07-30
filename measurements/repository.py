@@ -1,4 +1,4 @@
-from .models import AirQualityAssessment, EnvironmentalObservation
+from .models import AirQualityAssessment, QuickCheck
 
 
 def _recent_values(model, limit):
@@ -7,7 +7,7 @@ def _recent_values(model, limit):
 
 
 def environmental_history(limit=48):
-    return _recent_values(EnvironmentalObservation, limit)
+    return _recent_values(QuickCheck, limit)
 
 
 def assessment_history(limit=48):
@@ -15,7 +15,7 @@ def assessment_history(limit=48):
 
 
 def latest_environmental_observation():
-    term = EnvironmentalObservation.objects.order_by("-pk").first()
+    term = QuickCheck.objects.order_by("-pk").first()
     return term.value if term else None
 
 

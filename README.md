@@ -38,7 +38,7 @@ not imported; environmental semantics live in `measurements/semantic.py`.
 The substrate remains domain-neutral. Enpiro uses proxy models and interprets
 two ordered Term shapes:
 
-- Environmental observation: timestamp, temperature, humidity, pressure.
+- Quick check: timestamp, temperature, pressure, humidity.
 - Air-quality assessment: timestamp, percentage, validation flags.
 
 Every item is a canonical compact binary Symbol. Units and meaning come only
@@ -99,7 +99,7 @@ cannot be supplied as a normal pip dependency.
 - [ ] Confirm the BME690 breakout-board manufacturer and I2C address.
 - [ ] Integrate the official Bosch BME690 SensorAPI and, if its license is
       suitable, the matching aarch64 BSEC 3.x binary.
-- [ ] Add a `record_sensor` command that writes environmental observations and
+- [ ] Add a `record_sensor` command that writes quick checks and
       asynchronous air-quality assessments at independently configured intervals.
 - [ ] Finalize the air-quality percentage calculation and validation flag rules;
       keep raw gas resistance transient.

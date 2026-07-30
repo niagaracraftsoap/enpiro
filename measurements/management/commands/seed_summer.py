@@ -5,11 +5,11 @@ from zoneinfo import ZoneInfo
 
 from django.core.management.base import BaseCommand, CommandError
 
-from measurements.models import AirQualityAssessment, EnvironmentalObservation
+from measurements.models import AirQualityAssessment, QuickCheck
 from measurements.semantic import (
     AssessmentCheck,
     create_air_quality_assessment,
-    create_environmental_observation,
+    create_quick_check,
 )
 
 
@@ -43,7 +43,7 @@ class Command(BaseCommand):
         start = datetime(year, 6, 1, tzinfo=zone)
         end = datetime(year, 9, 1, tzinfo=zone)
         existing = [
-            *terms_in_period(EnvironmentalObservation, start, end),
+            *terms_in_period(QuickCheck, start, end),
             *terms_in_period(AirQualityAssessment, start, end),
         ]
         if existing and not options["replace"]:
@@ -80,7 +80,7 @@ class Command(BaseCommand):
             pressure += rng.gauss(0, 0.38) + (1013.0 - pressure) * 0.018
             pressure = max(992, min(1032, pressure))
 
-            create_environmental_observation(
+            create_quick_check(
                 timestamp,
                 temperature,
                 humidity,

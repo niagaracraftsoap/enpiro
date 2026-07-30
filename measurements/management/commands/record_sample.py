@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from measurements.services import save_environmental_observation
+from measurements.services import save_quick_check
 
 
 class Command(BaseCommand):
@@ -12,7 +12,7 @@ class Command(BaseCommand):
         parser.add_argument("--pressure", type=float, default=1013.25)
 
     def handle(self, *args, **options):
-        observation = save_environmental_observation(
+        observation = save_quick_check(
             temperature_c=options["temperature"],
             relative_humidity=options["humidity"],
             pressure_hpa=options["pressure"],

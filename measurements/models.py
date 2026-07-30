@@ -16,7 +16,7 @@ class ShapedTermManager(models.Manager):
         )
 
 
-class EnvironmentalObservationManager(ShapedTermManager):
+class QuickCheckManager(ShapedTermManager):
     symbol_count = 4
 
 
@@ -24,19 +24,19 @@ class AirQualityAssessmentManager(ShapedTermManager):
     symbol_count = 3
 
 
-class EnvironmentalObservation(Term):
-    """Semantic view: timestamp, temperature, humidity, pressure."""
+class QuickCheck(Term):
+    """Semantic view: timestamp, temperature, pressure, humidity."""
 
-    objects = EnvironmentalObservationManager()
+    objects = QuickCheckManager()
 
     class Meta:
         proxy = True
 
     @property
     def value(self):
-        from .semantic import decode_environmental_observation
+        from .semantic import decode_quick_check
 
-        return decode_environmental_observation(self)
+        return decode_quick_check(self)
 
 
 class AirQualityAssessment(Term):

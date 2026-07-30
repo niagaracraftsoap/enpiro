@@ -109,14 +109,17 @@ def create_term(atoms, symbol_cache=None):
         for order, atom in enumerate(atoms):
             symbol = cache.get(atom)
             if symbol is None:
-                symbol = Symbol.objects.resolve_clear(atom)
+                result = Symbol.objects.get_or_create(symbol=atom)
+                # The originating substrate manager returns a Symbol directly;
+                # Django's stock manager returns (Symbol, created).
+                symbol = result[0] if isinstance(result, tuple) else result
                 cache[atom] = symbol
             relations.append(TermSymbol(term=term, symbol=symbol, order=order))
         TermSymbol.objects.bulk_create(relations)
     return term
 
 
-def create_environmental_observation(
+def create_quick_check(
     observed_at,
     temperature_c,
     relative_humidity,
@@ -128,8 +131,8 @@ def create_environmental_observation(
         (
             encode_timestamp(observed_at),
             encode_temperature(temperature_c),
-            encode_humidity(relative_humidity),
             encode_pressure(pressure_hpa),
+            encode_humidity(relative_humidity),
         ),
         symbol_cache,
     )
@@ -156,8 +159,8 @@ def create_air_quality_assessment(
     )
 
 
-def decode_environmental_observation(term):
-    timestamp, temperature, humidity, pressure = ordered_bytes(term)
+def decode_quick_check(term):
+    timestamp, temperature, pressure, humidity = ordered_bytes(term)
     return ObservationValue(
         observed_at=decode_timestamp(timestamp),
         temperature_c=struct.unpack(">h", temperature)[0] / 100,
