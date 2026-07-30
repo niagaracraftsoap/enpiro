@@ -1,0 +1,4 @@
+Django==5.2.16
+channels[daphne]==4.3.2
+smbus2==0.6.1
+cryptography==49.0.0

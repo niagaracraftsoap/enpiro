@@ -1,0 +1,237 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #27251f;
+  background: #f5efdf;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #f5efdf;
+}
+
+.monitor {
+  display: grid;
+  grid-template-rows: repeat(4, minmax(12rem, 25vh));
+  min-height: 100svh;
+}
+
+.dial {
+  --ink: #513e18;
+  --accent: #dd8b28;
+  --wash: #f7d87e;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(8rem, .85fr) minmax(11rem, 1.45fr);
+  grid-template-rows: auto 1fr;
+  gap: .35rem 1rem;
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 2rem);
+  overflow: hidden;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(255, 255, 255, .72), transparent 38%),
+    var(--wash);
+  border-bottom: 1px solid rgba(81, 62, 24, .18);
+}
+
+.dial--humidity {
+  --ink: #174a52;
+  --accent: #258a94;
+  --wash: #bce2d9;
+}
+
+.dial--pressure {
+  --ink: #493c68;
+  --accent: #7561a9;
+  --wash: #d9d0e9;
+}
+
+.dial--air {
+  --ink: #285132;
+  --accent: #4b8b4f;
+  --wash: #cbe2a8;
+}
+
+.dial__heading {
+  grid-column: 1;
+  align-self: start;
+  min-width: 0;
+}
+
+.dial__label,
+.dial__meta {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  line-height: 1.2;
+}
+
+.dial__label {
+  font-size: clamp(.7rem, 1.8vw, .82rem);
+  font-weight: 750;
+}
+
+.dial__meta {
+  margin-top: .3rem;
+  font-size: .62rem;
+  opacity: .64;
+}
+
+.dial__reading {
+  grid-column: 1;
+  align-self: end;
+  display: flex;
+  align-items: baseline;
+  gap: .35rem;
+  white-space: nowrap;
+}
+
+.dial__value {
+  font-size: clamp(2.35rem, 10vw, 4.8rem);
+  font-weight: 520;
+  line-height: .82;
+  letter-spacing: -.075em;
+}
+
+.dial__unit {
+  font-size: clamp(.7rem, 2vw, 1rem);
+  font-weight: 700;
+}
+
+.dial__chart {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-width: 0;
+}
+
+.dial__chart svg {
+  width: 100%;
+  height: 100%;
+  min-height: 5rem;
+  overflow: visible;
+}
+
+.chart__history,
+.chart__projection {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart__area {
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.chart__projection {
+  stroke-dasharray: 4 5;
+  opacity: .72;
+}
+
+.chart__now {
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+  opacity: .32;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart__point {
+  fill: var(--ink);
+  vector-effect: non-scaling-stroke;
+}
+
+.dial__range {
+  display: grid;
+  grid-template-columns: 3fr auto 1fr;
+  gap: .4rem;
+  padding-top: .4rem;
+  font-size: .55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  opacity: .56;
+}
+
+.dial__range span:nth-child(2) {
+  text-align: center;
+}
+
+.dial__range span:last-child {
+  text-align: right;
+}
+
+@media (min-width: 760px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .monitor {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: 1fr;
+    height: 100svh;
+  }
+
+  .dial {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    gap: 0;
+    padding: clamp(1.25rem, 2.2vw, 2.4rem);
+    border-right: 1px solid rgba(81, 62, 24, .18);
+    border-bottom: 0;
+  }
+
+  .dial:last-child {
+    border-right: 0;
+  }
+
+  .dial__heading,
+  .dial__reading,
+  .dial__chart {
+    grid-column: 1;
+  }
+
+  .dial__reading {
+    align-self: start;
+    margin-top: clamp(2.5rem, 8vh, 6rem);
+  }
+
+  .dial__value {
+    font-size: clamp(3rem, 6.2vw, 7.5rem);
+  }
+
+  .dial__chart {
+    grid-row: 3;
+    margin-top: clamp(2rem, 8vh, 6rem);
+  }
+
+  .dial__chart svg {
+    min-height: 12rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chart__history,
+  .chart__area {
+    animation: reveal .7s ease-out both;
+  }
+
+  @keyframes reveal {
+    from { opacity: 0; }
+  }
+}

@@ -1,0 +1,99 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5efdf">
+  <title>Environmental Monitor · Bosch BME690</title>
+  <link rel="stylesheet" href="{% static 'measurements/dashboard.css' %}">
+</head>
+<body>
+  <main class="monitor">
+    <section class="dial dial--temperature" data-metric="temperature_c">
+      <div class="dial__heading">
+        <p class="dial__label">Temperature</p>
+        <p class="dial__meta">Environmental Monitor</p>
+      </div>
+      <div class="dial__reading">
+        <strong class="dial__value">{% if latest_environment %}{{ latest_environment.temperature_c|floatformat:1 }}{% else %}—{% endif %}</strong>
+        <span class="dial__unit">°C</span>
+      </div>
+      <div class="dial__chart">
+        <svg role="img" aria-label="Temperature history and projection" preserveAspectRatio="none">
+          <path class="chart__area"></path>
+          <path class="chart__history"></path>
+          <path class="chart__projection"></path>
+          <line class="chart__now"></line>
+          <circle class="chart__point" r="4"></circle>
+        </svg>
+        <div class="dial__range"><span>Past</span><span>Now</span><span>Projection</span></div>
+      </div>
+    </section>
+
+    <section class="dial dial--humidity" data-metric="relative_humidity">
+      <div class="dial__heading">
+        <p class="dial__label">Humidity</p>
+      </div>
+      <div class="dial__reading">
+        <strong class="dial__value">{% if latest_environment %}{{ latest_environment.relative_humidity|floatformat:1 }}{% else %}—{% endif %}</strong>
+        <span class="dial__unit">%</span>
+      </div>
+      <div class="dial__chart">
+        <svg role="img" aria-label="Humidity history and projection" preserveAspectRatio="none">
+          <path class="chart__area"></path>
+          <path class="chart__history"></path>
+          <path class="chart__projection"></path>
+          <line class="chart__now"></line>
+          <circle class="chart__point" r="4"></circle>
+        </svg>
+        <div class="dial__range"><span>Past</span><span>Now</span><span>Projection</span></div>
+      </div>
+    </section>
+
+    <section class="dial dial--pressure" data-metric="pressure_hpa">
+      <div class="dial__heading">
+        <p class="dial__label">Pressure</p>
+        <p class="dial__meta" id="connection-status">Connecting</p>
+      </div>
+      <div class="dial__reading">
+        <strong class="dial__value">{% if latest_environment %}{{ latest_environment.pressure_hpa|floatformat:1 }}{% else %}—{% endif %}</strong>
+        <span class="dial__unit">hPa</span>
+      </div>
+      <div class="dial__chart">
+        <svg role="img" aria-label="Pressure history and projection" preserveAspectRatio="none">
+          <path class="chart__area"></path>
+          <path class="chart__history"></path>
+          <path class="chart__projection"></path>
+          <line class="chart__now"></line>
+          <circle class="chart__point" r="4"></circle>
+        </svg>
+        <div class="dial__range"><span>Past</span><span>Now</span><span>Projection</span></div>
+      </div>
+    </section>
+
+    <section class="dial dial--air" data-metric="air_quality_percentage">
+      <div class="dial__heading">
+        <p class="dial__label">Air quality</p>
+        <p class="dial__meta">Bosch BME690</p>
+      </div>
+      <div class="dial__reading">
+        <strong class="dial__value">{% if latest_assessment %}{{ latest_assessment.percentage }}{% else %}—{% endif %}</strong>
+        <span class="dial__unit">%</span>
+      </div>
+      <div class="dial__chart">
+        <svg role="img" aria-label="Air quality history and projection" preserveAspectRatio="none">
+          <path class="chart__area"></path>
+          <path class="chart__history"></path>
+          <path class="chart__projection"></path>
+          <line class="chart__now"></line>
+          <circle class="chart__point" r="4"></circle>
+        </svg>
+        <div class="dial__range"><span>Past</span><span>Now</span><span>Projection</span></div>
+      </div>
+    </section>
+  </main>
+  {{ reading_history|json_script:"reading-history" }}
+  <script src="{% static 'measurements/dashboard.js' %}" defer></script>
+</body>
+</html>
