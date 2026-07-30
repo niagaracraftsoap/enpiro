@@ -1,0 +1,231 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#292c28">
+  <title>Warehouse Environmental Monitor</title>
+  <link rel="stylesheet" href="{% static 'measurements/dashboard.css' %}">
+</head>
+<body class="simple-app">
+  <header class="simple-header">
+    <div class="simple-header__identity">
+      <p class="eyebrow">Warehouse · Environmental monitor</p>
+      <h1>Current conditions</h1>
+      <p id="active-range-label">Last 24 hours</p>
+    </div>
+    <div class="simple-header__actions">
+      <div class="live-state" aria-live="polite">
+        <span class="live-state__dot"></span>
+        <span id="connection-status">Connecting</span>
+      </div>
+      <button type="button" id="range-button" aria-label="Select graph range" title="Select graph range">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 9h17M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z"/></svg>
+        <span class="sr-only">Range</span>
+      </button>
+      <button type="button" id="download-csv" aria-label="Download CSV" title="Download CSV">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+        <span class="sr-only">Download CSV</span>
+      </button>
+      <button type="button" id="about-button" aria-label="About this monitor" title="About this monitor">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+        <span class="sr-only">About</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="simple-main">
+    <section class="metrics" aria-label="Warehouse environmental history">
+      <article class="metric metric--temperature" data-metric="temperature_c">
+        <span class="metric__top"><span>Temperature</span><span class="condition-indicator" aria-live="polite">Assessing</span></span>
+        <span class="metric__reading">
+          <strong class="metric__value">{% if latest_environment %}{{ latest_environment.temperature_c|floatformat:1 }}{% else %}—{% endif %}</strong>
+          <span class="metric__unit">°C</span>
+        </span>
+        <span class="metric__trend"><strong data-trend-summary>Trend · Assessing</strong><small data-trend-detail></small></span>
+        <div class="metric__chart">
+          <span class="chart-scale" aria-hidden="true"><span data-scale="max"></span><span data-scale="mid"></span><span data-scale="min"></span></span>
+          <svg class="sparkline" role="img" aria-label="Temperature history" preserveAspectRatio="none">
+            <path class="sparkline__area"></path>
+            <path class="sparkline__line"></path>
+            <line class="sparkline__crosshair"></line>
+            <circle class="sparkline__point" r="5"></circle>
+          </svg>
+          <span class="chart-x-axis" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+        <span class="chart-tooltip" role="button" tabindex="0" aria-label="Dismiss historical value"></span>
+      </article>
+
+      <article class="metric metric--humidity" data-metric="relative_humidity">
+        <span class="metric__top"><span>Relative humidity</span><span class="condition-indicator" aria-live="polite">Assessing</span></span>
+        <span class="metric__reading">
+          <strong class="metric__value">{% if latest_environment %}{{ latest_environment.relative_humidity|floatformat:1 }}{% else %}—{% endif %}</strong>
+          <span class="metric__unit">%</span>
+        </span>
+        <span class="metric__trend"><strong data-trend-summary>Trend · Assessing</strong><small data-trend-detail></small></span>
+        <div class="metric__chart">
+          <span class="chart-scale" aria-hidden="true"><span data-scale="max"></span><span data-scale="mid"></span><span data-scale="min"></span></span>
+          <svg class="sparkline" role="img" aria-label="Relative humidity history" preserveAspectRatio="none">
+            <path class="sparkline__area"></path>
+            <path class="sparkline__line"></path>
+            <line class="sparkline__crosshair"></line>
+            <circle class="sparkline__point" r="5"></circle>
+          </svg>
+          <span class="chart-x-axis" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+        <span class="chart-tooltip" role="button" tabindex="0" aria-label="Dismiss historical value"></span>
+      </article>
+
+      <article class="metric metric--pressure" data-metric="pressure_hpa">
+        <span class="metric__top"><span>Atmospheric pressure</span><span>hPa</span></span>
+        <span class="metric__reading">
+          <strong class="metric__value">{% if latest_environment %}{{ latest_environment.pressure_hpa|floatformat:1 }}{% else %}—{% endif %}</strong>
+          <span class="metric__unit">hPa</span>
+        </span>
+        <span class="metric__trend"><strong data-trend-summary>Trend · Assessing</strong><small data-trend-detail></small></span>
+        <div class="metric__chart">
+          <span class="chart-scale" aria-hidden="true"><span data-scale="max"></span><span data-scale="mid"></span><span data-scale="min"></span></span>
+          <svg class="sparkline" role="img" aria-label="Atmospheric pressure history" preserveAspectRatio="none">
+            <path class="sparkline__area"></path>
+            <path class="sparkline__line"></path>
+            <line class="sparkline__crosshair"></line>
+            <circle class="sparkline__point" r="5"></circle>
+          </svg>
+          <span class="chart-x-axis" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+        <span class="chart-tooltip" role="button" tabindex="0" aria-label="Dismiss historical value"></span>
+      </article>
+    </section>
+  </main>
+
+  <footer class="simple-footer">
+    <span>Enpiro · Warehouse</span>
+    <span id="last-recorded">{% if latest_environment %}Last reading {{ latest_environment.observed_at|date:"M j, Y · H:i T" }}{% else %}Waiting for first reading{% endif %}</span>
+  </footer>
+
+  <dialog class="range-dialog" id="range-dialog">
+    <form method="dialog" id="range-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Graph history</p><h2>Select range</h2></div>
+        <button value="cancel" aria-label="Close range options">×</button>
+      </div>
+      <div class="range-presets">
+        <button type="button" data-hours="24">24 hours</button>
+        <button type="button" data-hours="168">7 days</button>
+        <button type="button" data-hours="720">30 days</button>
+        <button type="button" data-hours="all">All data</button>
+      </div>
+      <div class="range-fields">
+        <label><span>From</span><input type="datetime-local" id="range-start"></label>
+        <label><span>To</span><input type="datetime-local" id="range-end"></label>
+      </div>
+      <p class="download-error" id="range-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button class="primary" type="submit" value="apply">Apply range</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="download-dialog" id="download-dialog">
+    <form method="dialog" class="download-dialog__panel" id="download-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Export readings</p><h2>Download CSV</h2></div>
+        <button value="cancel" aria-label="Close download options">×</button>
+      </div>
+      <fieldset>
+        <legend>Include data</legend>
+        <label class="check-option"><input type="checkbox" name="download-metric" value="temperature_c" checked><span><strong>Temperature</strong><small>Degrees Celsius</small></span></label>
+        <label class="check-option"><input type="checkbox" name="download-metric" value="relative_humidity" checked><span><strong>Relative humidity</strong><small>Percent</small></span></label>
+        <label class="check-option"><input type="checkbox" name="download-metric" value="pressure_hpa" checked><span><strong>Atmospheric pressure</strong><small>Hectopascals</small></span></label>
+      </fieldset>
+      <label class="download-range"><span>Range</span>
+        <select id="download-range-select">
+          <option value="current">Current graph range</option>
+          <option value="24">Last 24 hours</option>
+          <option value="168">Last 7 days</option>
+          <option value="720">Last 30 days</option>
+          <option value="all">All recorded data</option>
+          <option value="custom">Custom range</option>
+        </select>
+      </label>
+      <div class="download-custom-range" id="download-custom-range" hidden>
+        <label><span>From</span><input type="datetime-local" id="download-start"></label>
+        <label><span>To</span><input type="datetime-local" id="download-end"></label>
+      </div>
+      <p class="download-error" id="download-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button class="primary" type="submit" value="download">Download file</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="about-dialog" id="about-dialog">
+    <div class="about-page">
+      <header>
+        <div><p class="eyebrow">Enpiro · Station profile</p><h2>Warehouse environmental monitor</h2></div>
+        <button id="about-close" aria-label="Close project information">×</button>
+      </header>
+      <div class="about-page__body">
+        <div class="about-page__copy">
+          <p class="about-page__lead">A small, continuous record of temperature, relative humidity, and atmospheric pressure inside the warehouse.</p>
+          <p>A Bosch BME690 environmental sensor sits on Pimoroni’s BME690 breakout and is attached to a Raspberry Pi Zero 2 W. Nine readings are sampled and robustly averaged into one observation every three minutes.</p>
+          <p>Canonical byte values are deduplicated in Enpiro’s Term/Symbol substrate, then decoded for the live interface and CSV exports.</p>
+          <button type="button" class="reset-link" id="reset-button">Reset recorded data</button>
+        </div>
+        <div class="brands">
+          <a href="https://www.bosch-sensortec.com/en/products/environmental-sensors/gas-sensors/bme690" target="_blank" rel="noopener"><img src="{% static 'measurements/brands/bosch.svg' %}" alt="Bosch"><span><strong>Bosch</strong><small>BME690 sensor</small></span></a>
+          <a href="https://shop.pimoroni.com/en-us/products/bme690-breakout" target="_blank" rel="noopener"><img src="{% static 'measurements/brands/pimoroni.png' %}" alt="Pimoroni"><span><strong>Pimoroni</strong><small>BME690 breakout</small></span></a>
+          <a href="https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/" target="_blank" rel="noopener"><img src="{% static 'measurements/brands/raspberry-pi.svg' %}" alt="Raspberry Pi"><span><strong>Raspberry Pi</strong><small>Zero 2 W</small></span></a>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="reset-dialog" id="reset-export-dialog">
+    <form method="dialog" class="reset-dialog__panel" id="reset-export-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Reset · Step 1 of 2</p><h2>Save the dataset first</h2></div>
+        <button value="cancel" aria-label="Cancel reset">×</button>
+      </div>
+      <p>This reset permanently removes every recorded observation. Download the complete CSV now if the history may be useful later.</p>
+      <a class="reset-download" id="reset-download" href="{% url 'measurements:reading-history-csv' %}?metrics=all">Download complete dataset</a>
+      <div class="dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button class="primary" type="submit" value="continue">Continue to confirmation</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="reset-dialog" id="reset-confirm-dialog">
+    <form method="dialog" class="reset-dialog__panel" id="reset-confirm-form">
+      {% csrf_token %}
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Reset · Step 2 of 2</p><h2>Delete all readings?</h2></div>
+        <button value="cancel" aria-label="Cancel reset">×</button>
+      </div>
+      <p>This cannot be undone. New observations will begin accumulating again on the next sensor cycle.</p>
+      <label class="reset-confirmation">
+        <span>Type <strong>RESET</strong> to confirm</span>
+        <input type="text" id="reset-confirmation" name="confirmation" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="reset-confirmation">
+        <span>Reset password</span>
+        <input type="password" id="reset-password" name="password" autocomplete="current-password">
+      </label>
+      <p class="download-error" id="reset-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button value="cancel">Keep readings</button>
+        <button class="danger" type="submit" value="reset">Permanently reset</button>
+      </div>
+    </form>
+  </dialog>
+
+  {{ reading_history|json_script:"reading-history" }}
+  {{ condition_thresholds|json_script:"condition-thresholds" }}
+  <div id="endpoints" data-history-url="{% url 'measurements:reading-history' %}" data-csv-url="{% url 'measurements:reading-history-csv' %}" data-reset-url="{% url 'measurements:reset-readings' %}"></div>
+  <script src="{% static 'measurements/dashboard.js' %}" defer></script>
+</body>
+</html>

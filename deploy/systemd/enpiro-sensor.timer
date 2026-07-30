@@ -1,0 +1,12 @@
+[Unit]
+Description=Record BME690 environmental readings every three minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=3min
+AccuracySec=1s
+Persistent=true
+Unit=enpiro-sensor.service
+
+[Install]
+WantedBy=timers.target

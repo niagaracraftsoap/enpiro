@@ -1,0 +1,19 @@
+[Unit]
+Description=Enpiro warehouse environmental monitor
+Documentation=http://piagara.local/
+Wants=network-online.target
+After=network-online.target redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/enpiro
+LoadCredential=django_secret_key:%h/.config/credentials/enpiro/django_secret_key
+ExecStartPre=%h/src/enpiro/venv/bin/python manage.py collectstatic --noinput
+ExecStart=%h/src/enpiro/venv/bin/daphne --bind 127.0.0.1 --port 8000 enpiro.asgi:application
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillSignal=SIGINT
+
+[Install]
+WantedBy=default.target
