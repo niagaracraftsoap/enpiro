@@ -2,8 +2,9 @@
   "use strict";
 
   const databaseName = "enpiro";
-  const databaseVersion = 1;
+  const databaseVersion = 2;
   const storeName = "environmental-observations";
+  const preferenceStoreName = "preferences";
 
   function openDatabase() {
     return new Promise((resolve, reject) => {
@@ -14,17 +15,20 @@
           const store = database.createObjectStore(storeName, { keyPath: "recorded_at" });
           store.createIndex("observed_ms", "observed_ms");
         }
+        if (!database.objectStoreNames.contains(preferenceStoreName)) {
+          database.createObjectStore(preferenceStoreName, { keyPath: "key" });
+        }
       });
       request.addEventListener("success", () => resolve(request.result));
       request.addEventListener("error", () => reject(request.error));
     });
   }
 
-  async function withStore(mode, operation) {
+  async function withStore(mode, operation, selectedStoreName = storeName) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction(storeName, mode);
-      const store = transaction.objectStore(storeName);
+      const transaction = database.transaction(selectedStoreName, mode);
+      const store = transaction.objectStore(selectedStoreName);
       let result;
       transaction.addEventListener("complete", () => {
         database.close();
@@ -71,5 +75,29 @@
     await withStore("readwrite", store => store.clear());
   }
 
-  window.EnpiroDataCache = { getAll, putMany, deleteMany, clear };
+  async function getPreference(key) {
+    const record = await withStore(
+      "readonly",
+      store => store.get(key),
+      preferenceStoreName,
+    );
+    return record?.value;
+  }
+
+  async function putPreference(key, value) {
+    await withStore(
+      "readwrite",
+      store => store.put({ key, value }),
+      preferenceStoreName,
+    );
+  }
+
+  window.EnpiroDataCache = {
+    getAll,
+    putMany,
+    deleteMany,
+    clear,
+    getPreference,
+    putPreference,
+  };
 }());

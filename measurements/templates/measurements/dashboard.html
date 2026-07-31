@@ -4,7 +4,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#292c28">
+  <meta name="theme-color" content="#ebe7dc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#002b36" media="(prefers-color-scheme: dark)">
   <title>Warehouse Environmental Monitor</title>
   <link rel="stylesheet" href="{% static 'measurements/dashboard.css' %}">
 </head>
@@ -51,7 +52,7 @@
             <path class="sparkline__missing"></path>
             <path class="sparkline__line"></path>
             <line class="sparkline__crosshair"></line>
-            <circle class="sparkline__point" r="5"></circle>
+            <text class="sparkline__pointer" aria-hidden="true">▼</text>
           </svg>
           <span class="chart-x-axis" aria-hidden="true"><span></span><span></span><span></span></span>
         </div>
@@ -72,7 +73,7 @@
             <path class="sparkline__missing"></path>
             <path class="sparkline__line"></path>
             <line class="sparkline__crosshair"></line>
-            <circle class="sparkline__point" r="5"></circle>
+            <text class="sparkline__pointer" aria-hidden="true">▼</text>
           </svg>
           <span class="chart-x-axis" aria-hidden="true"><span></span><span></span><span></span></span>
         </div>
@@ -93,7 +94,7 @@
             <path class="sparkline__missing"></path>
             <path class="sparkline__line"></path>
             <line class="sparkline__crosshair"></line>
-            <circle class="sparkline__point" r="5"></circle>
+            <text class="sparkline__pointer" aria-hidden="true">▼</text>
           </svg>
           <span class="chart-x-axis" aria-hidden="true"><span></span><span></span><span></span></span>
         </div>

@@ -4,6 +4,11 @@
   --ink: #292c28;
   --muted: #5f625b;
   --subdued: #7a7d75;
+  --success: #16733b;
+  --warning: #d56a00;
+  --condition-danger: #b5161b;
+  --danger: #8b1515;
+  --backdrop: rgba(41, 44, 40, .72);
   color-scheme: light;
   font-family: "Helvetica LT Pro", "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
   font-size: 16px;
@@ -12,7 +17,51 @@
   font-synthesis: none;
 }
 
-* { box-sizing: border-box; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #002b36;
+    --paper-deep: #073642;
+    --ink: #93a1a1;
+    --muted: #839496;
+    --subdued: #586e75;
+    --success: #859900;
+    --warning: #cb4b16;
+    --condition-danger: #dc322f;
+    --danger: #dc322f;
+    --backdrop: rgba(0, 43, 54, .8);
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  transition:
+    color 420ms ease,
+    background-color 420ms ease,
+    border-color 420ms ease,
+    box-shadow 420ms ease,
+    fill 420ms ease,
+    stroke 420ms ease;
+}
+
+::before,
+::after,
+::backdrop {
+  transition:
+    color 420ms ease,
+    background-color 420ms ease,
+    border-color 420ms ease,
+    box-shadow 420ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    transition-duration: 0s !important;
+  }
+}
 
 html,
 body {
@@ -148,7 +197,7 @@ p {
 }
 
 .is-live .live-state__dot {
-  background: #16733b;
+  background: var(--success);
 }
 
 .simple-header__actions > button {
@@ -246,15 +295,15 @@ p {
 }
 
 .condition--green {
-  --condition-color: #16733b;
+  --condition-color: var(--success);
 }
 
 .condition--orange {
-  --condition-color: #d56a00;
+  --condition-color: var(--warning);
 }
 
 .condition--red {
-  --condition-color: #b5161b;
+  --condition-color: var(--condition-danger);
 }
 
 .metric[class*="condition--"] .condition-indicator {
@@ -375,8 +424,7 @@ p {
 .sparkline__line,
 .sparkline__area,
 .sparkline__missing,
-.sparkline__crosshair,
-.sparkline__point {
+.sparkline__crosshair {
   vector-effect: non-scaling-stroke;
 }
 
@@ -401,41 +449,16 @@ p {
 
 .metric.is-refreshing .sparkline__line,
 .metric.is-refreshing .sparkline__area {
-  animation: chart-wipe-out 260ms ease-in forwards;
+  fill: var(--subdued);
+  stroke: var(--subdued);
 }
 
-.metric.is-refreshing .sparkline__missing {
-  animation: missing-data-pulse 900ms ease-in-out infinite alternate;
+.metric.is-refreshing .sparkline__line {
+  opacity: .55;
 }
 
-@keyframes chart-wipe-out {
-  from {
-    clip-path: inset(0 0 0 0);
-    opacity: 1;
-  }
-
-  to {
-    clip-path: inset(0 0 0 100%);
-    opacity: 0;
-  }
-}
-
-@keyframes missing-data-pulse {
-  from {
-    opacity: .35;
-  }
-
-  to {
-    opacity: .8;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .metric.is-refreshing .sparkline__line,
-  .metric.is-refreshing .sparkline__area,
-  .metric.is-refreshing .sparkline__missing {
-    animation: none;
-  }
+.metric.is-refreshing .sparkline__area {
+  opacity: .05;
 }
 
 .sparkline__crosshair {
@@ -445,15 +468,18 @@ p {
   opacity: 0;
 }
 
-.sparkline__point {
-  fill: var(--paper);
-  stroke: var(--ink);
-  stroke-width: 2;
+.sparkline__pointer {
+  fill: var(--ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 900;
+  text-anchor: middle;
   opacity: 0;
+  pointer-events: none;
 }
 
 .sparkline.is-inspecting .sparkline__crosshair,
-.sparkline.is-inspecting .sparkline__point {
+.sparkline.is-inspecting .sparkline__pointer {
   opacity: 1;
 }
 
@@ -514,7 +540,7 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgba(41, 44, 40, .72);
+  background: var(--backdrop);
 }
 
 .range-dialog,
@@ -679,7 +705,7 @@ dialog::backdrop {
 .download-error {
   min-height: 1.2rem;
   margin: .75rem 0;
-  color: #8b1515;
+  color: var(--danger);
   font-size: .85rem;
   font-weight: 700;
 }
@@ -700,7 +726,7 @@ dialog::backdrop {
   padding: .7rem 0;
   border: 0;
   border-bottom: 2px solid currentColor;
-  color: #8b1515;
+  color: var(--danger);
   cursor: pointer;
   background: transparent;
   font-weight: 800;
@@ -749,9 +775,9 @@ dialog::backdrop {
 }
 
 .dialog-actions .danger {
-  border-color: #8b1515;
+  border-color: var(--danger);
   color: var(--paper);
-  background: #8b1515;
+  background: var(--danger);
 }
 
 .dialog-actions button:disabled {

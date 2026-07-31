@@ -18,6 +18,7 @@ const metricConfig = {
 const trendWindows = [6, 12, 30];
 const expectedCadenceMs = 3 * 60_000;
 const missingAfterMs = expectedCadenceMs * 2;
+const rangePreferenceKey = "graph-range";
 
 const metricRows = Object.fromEntries(
   Object.keys(metricConfig).map(metric => [
@@ -298,6 +299,60 @@ function setRange(hours) {
   }[hours] || `Last ${hours} hours`;
 }
 
+function currentRangePreference() {
+  if (rollingRangeHours !== null) {
+    return { mode: "rolling", hours: rollingRangeHours };
+  }
+  if (!rangeStart.value && !rangeEnd.value) return { mode: "all" };
+  return {
+    mode: "custom",
+    start: rangeStart.value,
+    end: rangeEnd.value,
+  };
+}
+
+function restoreRangePreference(preference) {
+  if (preference?.mode === "rolling"
+      && Number.isFinite(preference.hours)
+      && preference.hours > 0) {
+    setRange(preference.hours);
+    return;
+  }
+  if (preference?.mode === "all") {
+    setRange("all");
+    return;
+  }
+  if (preference?.mode === "custom") {
+    const startIsValid = !preference.start
+      || Number.isFinite(new Date(preference.start).getTime());
+    const endIsValid = !preference.end
+      || Number.isFinite(new Date(preference.end).getTime());
+    const orderIsValid = !preference.start
+      || !preference.end
+      || preference.start <= preference.end;
+    if (startIsValid && endIsValid && orderIsValid) {
+      rollingRangeHours = null;
+      rangeStart.value = preference.start || "";
+      rangeEnd.value = preference.end || "";
+      rangeDescription = "";
+      selectRangePreset(null);
+      return;
+    }
+  }
+  setRange(12);
+}
+
+async function persistRangePreference() {
+  try {
+    await window.EnpiroDataCache?.putPreference(
+      rangePreferenceKey,
+      currentRangePreference(),
+    );
+  } catch (_cacheError) {
+    // The selected range still applies for this session if storage is unavailable.
+  }
+}
+
 function rangeQuery(metric) {
   const params = new URLSearchParams({ metric });
   if (rangeStart.value) params.set("start", utcQueryValue(rangeStart.value));
@@ -360,21 +415,43 @@ function nearestTimestampPointIndex(event, element, points) {
   ), 0);
 }
 
+function chartPointerX(event, element) {
+  const bounds = element.getBoundingClientRect();
+  return Math.max(0, Math.min(400, ((event.clientX - bounds.left) / bounds.width) * 400));
+}
+
+function interpolatedPointY(points, x) {
+  if (x <= points[0][0]) return points[0][1];
+  if (x >= points.at(-1)[0]) return points.at(-1)[1];
+  const rightIndex = points.findIndex(point => point[0] >= x);
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  const distance = right[0] - left[0];
+  if (!distance) return right[1];
+  const progress = (x - left[0]) / distance;
+  const smoothProgress = progress * progress * (3 - (2 * progress));
+  return left[1] + ((right[1] - left[1]) * smoothProgress);
+}
+
 function showPoint(card, event) {
   const svg = card.querySelector(".sparkline");
   const state = sparklineState.get(svg);
   if (!state?.points.length) return;
   const index = nearestTimestampPointIndex(event, svg, state.points);
-  const [x, y] = state.points[index];
+  const selectedX = state.points[index][0];
+  const markerX = chartPointerX(event, svg);
+  const markerY = interpolatedPointY(state.points, markerX);
   const row = state.rows[index];
   const config = metricConfig[state.metric];
   const condition = conditionForValue(state.metric, row.value);
-  const point = svg.querySelector(".sparkline__point");
+  const pointer = svg.querySelector(".sparkline__pointer");
   const crosshair = svg.querySelector(".sparkline__crosshair");
-  point.setAttribute("cx", x);
-  point.setAttribute("cy", y);
-  crosshair.setAttribute("x1", x);
-  crosshair.setAttribute("x2", x);
+  const placeBelow = markerY < 24;
+  pointer.textContent = placeBelow ? "▲" : "▼";
+  pointer.setAttribute("x", markerX);
+  pointer.setAttribute("y", placeBelow ? markerY + 20 : markerY - 6);
+  crosshair.setAttribute("x1", selectedX);
+  crosshair.setAttribute("x2", selectedX);
   crosshair.setAttribute("y1", 0);
   crosshair.setAttribute("y2", 180);
   svg.classList.add("is-inspecting");
@@ -475,23 +552,21 @@ function describeRange() {
   return rangeStart.value ? `Since ${formatTime(rangeStart.value)}` : `Until ${formatTime(rangeEnd.value)}`;
 }
 
-async function wipeDisplayedRange() {
-  const cards = [...document.querySelectorAll(".metric")];
-  cards.forEach(card => card.classList.add("is-refreshing"));
-  await new Promise(resolve => window.setTimeout(resolve, 260));
-  Object.keys(metricRows).forEach(metric => { metricRows[metric] = []; });
-  renderMetrics();
+function markDisplayedRangeStale() {
+  document.querySelectorAll(".metric").forEach(card => {
+    card.classList.add("is-refreshing");
+  });
 }
 
-async function loadRange({ wipe = false } = {}) {
+async function loadRange({ showStale = false } = {}) {
   if (rollingRangeHours !== null) setRange(rollingRangeHours);
+  if (showStale) markDisplayedRangeStale();
   const payloadRequest = Promise.all(Object.keys(metricConfig).map(async metric => {
     const response = await fetch(`${endpoints.historyUrl}?${rangeQuery(metric)}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "History request failed.");
     return payload;
   }));
-  if (wipe) await wipeDisplayedRange();
   const payloads = await payloadRequest;
   const fetched = new Map();
   payloads.forEach(payload => {
@@ -553,7 +628,8 @@ document.querySelector("#range-form").addEventListener("submit", async event => 
   error.textContent = "";
   rangeDialog.close();
   try {
-    await loadRange({ wipe: true });
+    await loadRange({ showStale: true });
+    await persistRangePreference();
   } catch (requestError) {
     document.querySelector("#active-range-label").textContent = requestError.message;
     document.querySelectorAll(".metric.is-refreshing").forEach(card => {
@@ -690,8 +766,15 @@ async function initializeData() {
   } catch (_cacheError) {
     // Private browsing modes may make IndexedDB unavailable; the network remains usable.
   }
-  setRange(12);
+  try {
+    restoreRangePreference(
+      await window.EnpiroDataCache?.getPreference(rangePreferenceKey),
+    );
+  } catch (_cacheError) {
+    restoreRangePreference(null);
+  }
   rebuildMetricRows();
+  document.querySelector("#active-range-label").textContent = describeRange();
   renderMetrics();
   const latest = [...observations.values()].sort((left, right) => (
     new Date(left.recorded_at).getTime() - new Date(right.recorded_at).getTime()
