@@ -6,8 +6,8 @@ const endpoints = document.querySelector("#endpoints").dataset;
 const rangeStart = document.querySelector("#range-start");
 const rangeEnd = document.querySelector("#range-end");
 const sparklineState = new WeakMap();
-let rangeDescription = "Last 24 hours";
-let rollingRangeHours = 24;
+let rangeDescription = "Last 12 hours";
+let rollingRangeHours = 12;
 const observations = new Map();
 
 const metricConfig = {
@@ -16,6 +16,8 @@ const metricConfig = {
   pressure_hpa: { label: "Atmospheric pressure", unit: "hPa", decimals: 1, stableSlope: 0.5 },
 };
 const trendWindows = [6, 12, 30];
+const expectedCadenceMs = 3 * 60_000;
+const missingAfterMs = expectedCadenceMs * 2;
 
 const metricRows = Object.fromEntries(
   Object.keys(metricConfig).map(metric => [
@@ -65,6 +67,67 @@ function rebuildMetricRows() {
 function pointsToPath(points) {
   return points.map(([x, y], index) =>
     `${index ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+}
+
+function wavePath(start, end) {
+  const distance = end[0] - start[0];
+  if (distance <= 0) return "";
+  const steps = Math.max(3, Math.ceil(distance / 10));
+  const commands = [`M${start[0].toFixed(2)},${start[1].toFixed(2)}`];
+  for (let step = 1; step < steps; step += 1) {
+    const ratio = step / steps;
+    const x = start[0] + distance * ratio;
+    const baseline = start[1] + (end[1] - start[1]) * ratio;
+    const roughness = (step % 2 ? -1 : 1) * (2.5 + (step % 3));
+    commands.push(`L${x.toFixed(2)},${(baseline + roughness).toFixed(2)}`);
+  }
+  commands.push(`L${end[0].toFixed(2)},${end[1].toFixed(2)}`);
+  return commands.join(" ");
+}
+
+function graphPaths(rows, points) {
+  if (!rows.length) {
+    return {
+      observed: "",
+      area: "",
+      missing: wavePath([0, 90], [400, 90]),
+    };
+  }
+  const segments = [];
+  const missing = [];
+  let segment = [points[0]];
+  const firstTime = new Date(rows[0].recorded_at).getTime();
+  const timeBounds = chartTimeBounds(rows);
+  if (firstTime - timeBounds.start > missingAfterMs && points[0][0] > 0) {
+    missing.push(wavePath([0, points[0][1]], points[0]));
+  }
+  for (let index = 1; index < rows.length; index += 1) {
+    const elapsed = (
+      new Date(rows[index].recorded_at).getTime()
+      - new Date(rows[index - 1].recorded_at).getTime()
+    );
+    if (elapsed > missingAfterMs) {
+      segments.push(segment);
+      missing.push(wavePath(points[index - 1], points[index]));
+      segment = [points[index]];
+    } else {
+      segment.push(points[index]);
+    }
+  }
+  segments.push(segment);
+
+  const latestTime = new Date(rows.at(-1).recorded_at).getTime();
+  if (timeBounds.end - latestTime > missingAfterMs && points.at(-1)[0] < 400) {
+    missing.push(wavePath(points.at(-1), [400, points.at(-1)[1]]));
+  }
+  return {
+    observed: segments.map(pointsToPath).join(" "),
+    area: segments
+      .filter(item => item.length > 1)
+      .map(item => `${pointsToPath(item)} L${item.at(-1)[0].toFixed(2)},180 L${item[0][0].toFixed(2)},180 Z`)
+      .join(" "),
+    missing: missing.join(" "),
+  };
 }
 
 function chartTimeBounds(rows) {
@@ -203,7 +266,20 @@ function localInputValue(date) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+function utcQueryValue(localValue) {
+  return localValue ? new Date(localValue).toISOString() : "";
+}
+
+function selectRangePreset(hours) {
+  document.querySelectorAll(".range-presets button").forEach(button => {
+    const selected = button.dataset.hours === String(hours);
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
 function setRange(hours) {
+  selectRangePreset(hours);
   if (hours === "all") {
     rollingRangeHours = null;
     rangeStart.value = "";
@@ -224,8 +300,8 @@ function setRange(hours) {
 
 function rangeQuery(metric) {
   const params = new URLSearchParams({ metric });
-  if (rangeStart.value) params.set("start", rangeStart.value);
-  if (rangeEnd.value) params.set("end", rangeEnd.value);
+  if (rangeStart.value) params.set("start", utcQueryValue(rangeStart.value));
+  if (rangeEnd.value) params.set("end", utcQueryValue(rangeEnd.value));
   return params;
 }
 
@@ -241,6 +317,7 @@ function renderMetric(card) {
     card.querySelector(".metric__value").textContent = "—";
     card.querySelector(".sparkline__line").removeAttribute("d");
     card.querySelector(".sparkline__area").removeAttribute("d");
+    card.querySelector(".sparkline__missing").setAttribute("d", wavePath([0, 90], [400, 90]));
     card.querySelectorAll("[data-scale]").forEach(label => { label.textContent = ""; });
     axisLabels.forEach(label => { label.textContent = ""; });
     renderCondition(card, metric, NaN);
@@ -264,9 +341,10 @@ function renderMetric(card) {
   card.querySelector('[data-scale="max"]').textContent = max.toFixed(config.decimals);
   card.querySelector('[data-scale="mid"]').textContent = ((min + max) / 2).toFixed(config.decimals);
   card.querySelector('[data-scale="min"]').textContent = min.toFixed(config.decimals);
-  const path = pointsToPath(points);
-  card.querySelector(".sparkline__line").setAttribute("d", path);
-  card.querySelector(".sparkline__area").setAttribute("d", `${path} L400,180 L0,180 Z`);
+  const paths = graphPaths(rows, points);
+  card.querySelector(".sparkline__line").setAttribute("d", paths.observed);
+  card.querySelector(".sparkline__area").setAttribute("d", paths.area);
+  card.querySelector(".sparkline__missing").setAttribute("d", paths.missing);
   sparklineState.set(svg, { points, rows, metric });
 }
 
@@ -397,14 +475,24 @@ function describeRange() {
   return rangeStart.value ? `Since ${formatTime(rangeStart.value)}` : `Until ${formatTime(rangeEnd.value)}`;
 }
 
-async function loadRange() {
+async function wipeDisplayedRange() {
+  const cards = [...document.querySelectorAll(".metric")];
+  cards.forEach(card => card.classList.add("is-refreshing"));
+  await new Promise(resolve => window.setTimeout(resolve, 260));
+  Object.keys(metricRows).forEach(metric => { metricRows[metric] = []; });
+  renderMetrics();
+}
+
+async function loadRange({ wipe = false } = {}) {
   if (rollingRangeHours !== null) setRange(rollingRangeHours);
-  const payloads = await Promise.all(Object.keys(metricConfig).map(async metric => {
+  const payloadRequest = Promise.all(Object.keys(metricConfig).map(async metric => {
     const response = await fetch(`${endpoints.historyUrl}?${rangeQuery(metric)}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "History request failed.");
     return payload;
   }));
+  if (wipe) await wipeDisplayedRange();
+  const payloads = await payloadRequest;
   const fetched = new Map();
   payloads.forEach(payload => {
     payload.readings.forEach(row => {
@@ -432,6 +520,9 @@ async function loadRange() {
   rebuildMetricRows();
   document.querySelector("#active-range-label").textContent = describeRange();
   renderMetrics();
+  document.querySelectorAll(".metric.is-refreshing").forEach(card => {
+    card.classList.remove("is-refreshing");
+  });
 }
 
 const rangeDialog = document.querySelector("#range-dialog");
@@ -444,6 +535,7 @@ document.querySelectorAll(".range-presets button").forEach(button => {
     if (event.isTrusted) {
       rangeDescription = "";
       rollingRangeHours = null;
+      selectRangePreset(null);
     }
   });
 });
@@ -461,9 +553,12 @@ document.querySelector("#range-form").addEventListener("submit", async event => 
   error.textContent = "";
   rangeDialog.close();
   try {
-    await loadRange();
+    await loadRange({ wipe: true });
   } catch (requestError) {
     document.querySelector("#active-range-label").textContent = requestError.message;
+    document.querySelectorAll(".metric.is-refreshing").forEach(card => {
+      card.classList.remove("is-refreshing");
+    });
   }
 });
 
@@ -514,8 +609,8 @@ downloadForm.addEventListener("submit", event => {
     error.textContent = "The start of the range must be before the end.";
     return;
   }
-  if (start) params.set("start", start);
-  if (end) params.set("end", end);
+  if (start) params.set("start", utcQueryValue(start));
+  if (end) params.set("end", utcQueryValue(end));
   downloadDialog.close();
   window.location.assign(`${endpoints.csvUrl}?${params}`);
 });
@@ -589,16 +684,23 @@ document.querySelector("#reset-confirm-form").addEventListener("submit", async e
 });
 
 async function initializeData() {
-  navigator.storage?.persist?.().catch(() => {});
   mergeObservations(initialReadings);
   try {
     mergeObservations(await window.EnpiroDataCache?.getAll() || []);
   } catch (_cacheError) {
     // Private browsing modes may make IndexedDB unavailable; the network remains usable.
   }
-  setRange(24);
+  setRange(12);
   rebuildMetricRows();
   renderMetrics();
+  const latest = [...observations.values()].sort((left, right) => (
+    new Date(left.recorded_at).getTime() - new Date(right.recorded_at).getTime()
+  )).at(-1);
+  if (latest) {
+    document.querySelector("#last-recorded").textContent = (
+      `Last reading ${formatTime(latest.recorded_at)}`
+    );
+  }
   await loadRange();
 }
 

@@ -13,7 +13,7 @@
     <div class="simple-header__identity">
       <p class="eyebrow">Warehouse · Environmental monitor</p>
       <h1>Current conditions</h1>
-      <p id="active-range-label">Last 24 hours</p>
+      <p id="active-range-label">Last 12 hours</p>
     </div>
     <div class="simple-header__actions">
       <div class="live-state" aria-live="polite">
@@ -48,6 +48,7 @@
           <span class="chart-scale" aria-hidden="true"><span data-scale="max"></span><span data-scale="mid"></span><span data-scale="min"></span></span>
           <svg class="sparkline" role="img" aria-label="Temperature history" preserveAspectRatio="none">
             <path class="sparkline__area"></path>
+            <path class="sparkline__missing"></path>
             <path class="sparkline__line"></path>
             <line class="sparkline__crosshair"></line>
             <circle class="sparkline__point" r="5"></circle>
@@ -68,6 +69,7 @@
           <span class="chart-scale" aria-hidden="true"><span data-scale="max"></span><span data-scale="mid"></span><span data-scale="min"></span></span>
           <svg class="sparkline" role="img" aria-label="Relative humidity history" preserveAspectRatio="none">
             <path class="sparkline__area"></path>
+            <path class="sparkline__missing"></path>
             <path class="sparkline__line"></path>
             <line class="sparkline__crosshair"></line>
             <circle class="sparkline__point" r="5"></circle>
@@ -88,6 +90,7 @@
           <span class="chart-scale" aria-hidden="true"><span data-scale="max"></span><span data-scale="mid"></span><span data-scale="min"></span></span>
           <svg class="sparkline" role="img" aria-label="Atmospheric pressure history" preserveAspectRatio="none">
             <path class="sparkline__area"></path>
+            <path class="sparkline__missing"></path>
             <path class="sparkline__line"></path>
             <line class="sparkline__crosshair"></line>
             <circle class="sparkline__point" r="5"></circle>
@@ -111,10 +114,12 @@
         <button value="cancel" aria-label="Close range options">×</button>
       </div>
       <div class="range-presets">
+        <button type="button" data-hours="3">3 hours</button>
+        <button type="button" data-hours="6">6 hours</button>
+        <button type="button" data-hours="12">12 hours</button>
         <button type="button" data-hours="24">24 hours</button>
         <button type="button" data-hours="168">7 days</button>
         <button type="button" data-hours="720">30 days</button>
-        <button type="button" data-hours="all">All data</button>
       </div>
       <div class="range-fields">
         <label><span>From</span><input type="datetime-local" id="range-start"></label>

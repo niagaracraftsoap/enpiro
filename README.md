@@ -79,6 +79,12 @@ observations render immediately, then the selected range is reconciled with
 the server on page load, WebSocket reconnection, network recovery, and return
 from a background tab. Graph points are positioned by their observation
 timestamps so missed intervals remain visible instead of being compressed.
+Observed lines stop when consecutive samples are missing. Rough dashed waves
+mark those intervals and the chart labels them explicitly as non-data rather
+than presenting an interpolated slope as a measurement.
+Observation timestamps are recorded, transferred, and cached as UTC. The
+dashboard formats them in the browser's local timezone, and converts locally
+entered date ranges back to UTC before requesting data from the server.
 
 The JSON API exposes the latest observation and filtered measurement history.
 A complete CSV export can be imported into an empty dataset with the
