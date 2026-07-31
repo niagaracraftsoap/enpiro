@@ -319,6 +319,7 @@ p {
   grid-template-rows: minmax(0, 1fr) auto;
   gap: .55rem;
   margin-top: auto;
+  padding-top: 3.25rem;
 }
 
 .chart-scale {
@@ -424,6 +425,10 @@ p {
   opacity: 0;
   background: var(--ink);
   transform: translate(-50%, 0);
+  transition:
+    left 90ms cubic-bezier(.2, .8, .2, 1),
+    opacity 90ms linear;
+  will-change: left;
 }
 
 .chart-tooltip.is-visible {
@@ -920,6 +925,7 @@ dialog::backdrop {
     grid-column: 2;
     grid-row: 1 / span 3;
     min-height: 3rem;
+    padding-top: 2.9rem;
   }
 
   .chart-scale {
@@ -988,4 +994,158 @@ dialog::backdrop {
   .metric__reading {
     margin: .35rem 0;
   }
+}
+
+@media (orientation: landscape) and (max-width: 1100px) and (max-height: 650px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  body {
+    display: block;
+    padding: .45rem;
+  }
+
+  .simple-header {
+    position: sticky;
+    z-index: 5;
+    top: 0;
+    padding: .35rem 0 .55rem;
+    background: var(--paper);
+  }
+
+  .simple-header__identity .eyebrow {
+    display: none;
+  }
+
+  .simple-header__identity > p:last-child {
+    display: block;
+    margin-top: .2rem;
+    font-size: .68rem;
+  }
+
+  .simple-header__identity h1 {
+    font-size: 1.55rem;
+  }
+
+  .simple-header__actions > button {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
+  .live-state {
+    min-height: 2.2rem;
+    padding: .35rem .55rem;
+  }
+
+  .metrics {
+    height: auto;
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-auto-rows: minmax(8.5rem, auto);
+    gap: .45rem;
+    padding: 0 .3rem .35rem 0;
+  }
+
+  .metric,
+  .metric:nth-child(1),
+  .metric:nth-child(2),
+  .metric:nth-child(3) {
+    display: grid;
+    min-height: 8.5rem;
+    grid-template-columns: minmax(9rem, .7fr) minmax(0, 1.3fr);
+    grid-template-rows: auto 1fr auto;
+    column-gap: .75rem;
+    margin: 0;
+    padding: .55rem .65rem;
+    overflow: hidden;
+    box-shadow: 4px 4px 0 var(--ink);
+  }
+
+  .metric__top,
+  .metric__reading,
+  .metric__trend {
+    min-width: 0;
+    grid-column: 1;
+  }
+
+  .metric__top {
+    font-size: .62rem;
+  }
+
+  .metric__top > span:last-child {
+    max-width: 7rem;
+    padding: .18rem .25rem .14rem;
+    font-size: .5rem;
+  }
+
+  .metric__reading {
+    align-self: center;
+    margin: .2rem 0;
+  }
+
+  .metric__value {
+    font-size: clamp(2.25rem, 7vw, 3.5rem);
+  }
+
+  .metric__unit {
+    font-size: .7rem;
+  }
+
+  .metric__trend {
+    align-self: end;
+    gap: 0;
+    margin: 0;
+  }
+
+  .metric__trend strong {
+    font-size: .58rem;
+  }
+
+  .metric__trend small {
+    overflow: hidden;
+    font-size: .5rem;
+    text-overflow: ellipsis;
+  }
+
+  .metric__chart {
+    width: auto;
+    min-width: 0;
+    min-height: 0;
+    align-self: stretch;
+    grid-column: 2;
+    grid-row: 1 / -1;
+    gap: .35rem;
+    margin: 0;
+    overflow: hidden;
+    padding-top: 2.9rem;
+  }
+
+  .chart-scale {
+    min-width: 1.8rem;
+    font-size: .48rem;
+  }
+
+  .chart-x-axis {
+    font-size: .48rem;
+  }
+
+  .sparkline {
+    overflow: hidden;
+  }
+
+  .simple-footer {
+    display: flex;
+    padding: .35rem 0 .2rem;
+    font-size: .62rem;
+  }
+
+  .simple-footer span:first-child {
+    display: inline;
+  }
+
 }

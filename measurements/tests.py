@@ -74,6 +74,11 @@ class SemanticEncodingTests(TestCase):
 
 
 class DashboardTests(TestCase):
+    def test_admin_route_is_not_available(self):
+        """Keep Django Admin out of the monitor's public URL surface."""
+        response = self.client.get("/admin/")
+        self.assertEqual(response.status_code, 404)
+
     def test_empty_latest_endpoint_returns_404(self):
         """Give API clients an explicit no-data response before collection begins."""
         response = self.client.get(reverse("measurements:latest-reading"))
@@ -98,6 +103,11 @@ class DashboardTests(TestCase):
         self.assertEqual(
             dashboard.context["condition_thresholds"],
             settings.WAREHOUSE_CONDITION_THRESHOLDS,
+        )
+        self.assertContains(dashboard, "measurements/data-cache.js")
+        self.assertLess(
+            dashboard.content.index(b"measurements/data-cache.js"),
+            dashboard.content.index(b"measurements/dashboard.js"),
         )
 
     def test_history_filters_metric_and_exports_csv(self):

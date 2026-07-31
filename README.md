@@ -70,7 +70,15 @@ The dashboard provides:
   in Django settings.
 - Trend summaries calculated from the displayed readings.
 - Live observations delivered over a WebSocket.
+- Domain-scoped IndexedDB caching for immediate recovery after tab closures,
+  device restarts, and temporary connectivity gaps.
 - CSV downloads for one or more measurements and a selected time range.
+
+The browser cache is a read-through copy, not the source of truth. Cached
+observations render immediately, then the selected range is reconciled with
+the server on page load, WebSocket reconnection, network recovery, and return
+from a background tab. Graph points are positioned by their observation
+timestamps so missed intervals remain visible instead of being compressed.
 
 The JSON API exposes the latest observation and filtered measurement history.
 A complete CSV export can be imported into an empty dataset with the

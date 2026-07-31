@@ -7,6 +7,8 @@ const rangeStart = document.querySelector("#range-start");
 const rangeEnd = document.querySelector("#range-end");
 const sparklineState = new WeakMap();
 let rangeDescription = "Last 24 hours";
+let rollingRangeHours = 24;
+const observations = new Map();
 
 const metricConfig = {
   temperature_c: { label: "Temperature", unit: "°C", decimals: 1, stableSlope: 0.3 },
@@ -24,23 +26,78 @@ const metricRows = Object.fromEntries(
   ]),
 );
 
+function validObservation(reading) {
+  return reading
+    && Number.isFinite(new Date(reading.recorded_at).getTime())
+    && Object.keys(metricConfig).every(metric => Number.isFinite(reading[metric]));
+}
+
+function mergeObservations(readings) {
+  readings.filter(validObservation).forEach(reading => {
+    observations.set(reading.recorded_at, reading);
+  });
+}
+
+function selectedBounds() {
+  const start = rangeStart.value ? new Date(rangeStart.value).getTime() : -Infinity;
+  const end = rangeEnd.value ? new Date(rangeEnd.value).getTime() : Infinity;
+  return { start, end };
+}
+
+function rebuildMetricRows() {
+  const { start, end } = selectedBounds();
+  const selected = [...observations.values()]
+    .filter(reading => {
+      const timestamp = new Date(reading.recorded_at).getTime();
+      return timestamp >= start && timestamp <= end;
+    })
+    .sort((left, right) => (
+      new Date(left.recorded_at).getTime() - new Date(right.recorded_at).getTime()
+    ));
+  Object.keys(metricConfig).forEach(metric => {
+    metricRows[metric] = selected.map(reading => ({
+      recorded_at: reading.recorded_at,
+      value: reading[metric],
+    }));
+  });
+}
+
 function pointsToPath(points) {
   return points.map(([x, y], index) =>
     `${index ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
 }
 
-function plot(values, width, height) {
+function chartTimeBounds(rows) {
+  const selected = selectedBounds();
+  const firstTime = new Date(rows[0].recorded_at).getTime();
+  const lastTime = new Date(rows.at(-1).recorded_at).getTime();
+  return {
+    start: Number.isFinite(selected.start) ? selected.start : firstTime,
+    end: Number.isFinite(selected.end)
+      ? selected.end
+      : rollingRangeHours !== null ? Date.now() : lastTime,
+  };
+}
+
+function plot(rows, width, height) {
+  const values = rows.map(row => row.value);
   if (!values.length) return { points: [], min: 0, max: 0 };
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   const margin = Math.max((rawMax - rawMin) * 0.15, Math.abs(rawMax) * 0.002, 0.2);
   const min = rawMin - margin;
   const max = rawMax + margin;
+  const { start: firstTime, end: lastTime } = chartTimeBounds(rows);
+  const timeSpan = lastTime - firstTime;
   return {
     min,
     max,
     points: values.map((value, index) => [
-      values.length === 1 ? width / 2 : (index / (values.length - 1)) * width,
+      values.length === 1
+        ? width / 2
+        : timeSpan
+          ? ((new Date(rows[index].recorded_at).getTime() - firstTime) / timeSpan) * width
+          : width / 2,
       height - ((value - min) / (max - min)) * height,
     ]),
   };
@@ -148,11 +205,13 @@ function localInputValue(date) {
 
 function setRange(hours) {
   if (hours === "all") {
+    rollingRangeHours = null;
     rangeStart.value = "";
     rangeEnd.value = "";
     rangeDescription = "All recorded data";
     return;
   }
+  rollingRangeHours = Number(hours);
   const start = new Date(Date.now() - Number(hours) * 3_600_000);
   rangeStart.value = localInputValue(start);
   rangeEnd.value = "";
@@ -191,12 +250,17 @@ function renderMetric(card) {
   }
   card.querySelector(".metric__value").textContent = values.at(-1).toFixed(config.decimals);
   renderTrend(card, metric, rows);
-  const axisRows = [rows[0], rows[Math.floor((rows.length - 1) / 2)], rows.at(-1)];
+  const timeBounds = chartTimeBounds(rows);
+  const axisTimes = [
+    timeBounds.start,
+    timeBounds.start + ((timeBounds.end - timeBounds.start) / 2),
+    timeBounds.end,
+  ];
   axisLabels.forEach((label, index) => {
-    label.textContent = formatAxisTime(axisRows[index].recorded_at);
+    label.textContent = formatAxisTime(axisTimes[index]);
   });
   renderCondition(card, metric, values.at(-1));
-  const { points, min, max } = plot(values, 400, 180);
+  const { points, min, max } = plot(rows, 400, 180);
   card.querySelector('[data-scale="max"]').textContent = max.toFixed(config.decimals);
   card.querySelector('[data-scale="mid"]').textContent = ((min + max) / 2).toFixed(config.decimals);
   card.querySelector('[data-scale="min"]').textContent = min.toFixed(config.decimals);
@@ -210,17 +274,19 @@ function renderMetrics() {
   document.querySelectorAll(".metric").forEach(renderMetric);
 }
 
-function nearestPointIndex(event, element, count) {
+function nearestTimestampPointIndex(event, element, points) {
   const bounds = element.getBoundingClientRect();
-  const x = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
-  return Math.max(0, Math.min(count - 1, Math.round((x / bounds.width) * (count - 1))));
+  const x = Math.max(0, Math.min(400, ((event.clientX - bounds.left) / bounds.width) * 400));
+  return points.reduce((nearest, point, index) => (
+    Math.abs(point[0] - x) < Math.abs(points[nearest][0] - x) ? index : nearest
+  ), 0);
 }
 
 function showPoint(card, event) {
   const svg = card.querySelector(".sparkline");
   const state = sparklineState.get(svg);
   if (!state?.points.length) return;
-  const index = nearestPointIndex(event, svg, state.points.length);
+  const index = nearestTimestampPointIndex(event, svg, state.points);
   const [x, y] = state.points[index];
   const row = state.rows[index];
   const config = metricConfig[state.metric];
@@ -238,11 +304,20 @@ function showPoint(card, event) {
   const tooltip = card.querySelector(".chart-tooltip");
   const svgBounds = svg.getBoundingClientRect();
   const cardBounds = card.getBoundingClientRect();
-  const tooltipX = svgBounds.left - cardBounds.left + (x / 400) * svgBounds.width;
+  const chartBounds = card.querySelector(".metric__chart").getBoundingClientRect();
+  const pointerX = Math.max(
+    svgBounds.left,
+    Math.min(svgBounds.right, event.clientX),
+  );
+  const tooltipX = pointerX - cardBounds.left;
   const safeTooltipX = Math.max(76, Math.min(cardBounds.width - 76, tooltipX));
-  tooltip.innerHTML = `<strong>${row.value.toFixed(config.decimals)} ${config.unit}</strong><small>${formatTime(row.recorded_at)}</small>${condition ? `<small>${condition.label}</small>` : ""}`;
+  const detail = [
+    formatTime(row.recorded_at),
+    condition?.label,
+  ].filter(Boolean).join(" · ");
+  tooltip.innerHTML = `<strong>${row.value.toFixed(config.decimals)} ${config.unit}</strong><small>${detail}</small>`;
   tooltip.style.left = `${safeTooltipX}px`;
-  tooltip.style.top = `${svgBounds.top - cardBounds.top + (y / 180) * svgBounds.height}px`;
+  tooltip.style.top = `${chartBounds.top - cardBounds.top}px`;
   tooltip.classList.add("is-visible");
   card.classList.add("is-inspecting");
 }
@@ -323,13 +398,38 @@ function describeRange() {
 }
 
 async function loadRange() {
-  const requests = Object.keys(metricConfig).map(async metric => {
+  if (rollingRangeHours !== null) setRange(rollingRangeHours);
+  const payloads = await Promise.all(Object.keys(metricConfig).map(async metric => {
     const response = await fetch(`${endpoints.historyUrl}?${rangeQuery(metric)}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "History request failed.");
-    metricRows[metric] = payload.readings;
+    return payload;
+  }));
+  const fetched = new Map();
+  payloads.forEach(payload => {
+    payload.readings.forEach(row => {
+      const reading = fetched.get(row.recorded_at) || {
+        kind: "environment",
+        recorded_at: row.recorded_at,
+      };
+      reading[payload.metric] = row.value;
+      fetched.set(row.recorded_at, reading);
+    });
   });
-  await Promise.all(requests);
+  const completeReadings = [...fetched.values()].filter(validObservation);
+  const fetchedTimes = new Set(completeReadings.map(reading => reading.recorded_at));
+  const { start, end } = selectedBounds();
+  const removedTimes = [...observations.values()]
+    .filter(reading => {
+      const timestamp = new Date(reading.recorded_at).getTime();
+      return timestamp >= start && timestamp <= end && !fetchedTimes.has(reading.recorded_at);
+    })
+    .map(reading => reading.recorded_at);
+  removedTimes.forEach(recordedAt => observations.delete(recordedAt));
+  mergeObservations(completeReadings);
+  await window.EnpiroDataCache?.deleteMany(removedTimes);
+  await window.EnpiroDataCache?.putMany(completeReadings);
+  rebuildMetricRows();
   document.querySelector("#active-range-label").textContent = describeRange();
   renderMetrics();
 }
@@ -341,7 +441,10 @@ document.querySelectorAll(".range-presets button").forEach(button => {
 });
 [rangeStart, rangeEnd].forEach(input => {
   input.addEventListener("input", event => {
-    if (event.isTrusted) rangeDescription = "";
+    if (event.isTrusted) {
+      rangeDescription = "";
+      rollingRangeHours = null;
+    }
   });
 });
 document.querySelector("#range-form").addEventListener("submit", async event => {
@@ -469,6 +572,12 @@ document.querySelector("#reset-confirm-form").addEventListener("submit", async e
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "Reset failed.");
     Object.keys(metricRows).forEach(metric => { metricRows[metric] = []; });
+    observations.clear();
+    try {
+      await window.EnpiroDataCache?.clear();
+    } catch (_cacheError) {
+      // The server reset succeeded even if browser storage is unavailable.
+    }
     renderMetrics();
     document.querySelector("#last-recorded").textContent = "Waiting for first reading";
     resetConfirmDialog.close();
@@ -479,8 +588,19 @@ document.querySelector("#reset-confirm-form").addEventListener("submit", async e
   }
 });
 
-setRange(24);
-loadRange();
+async function initializeData() {
+  navigator.storage?.persist?.().catch(() => {});
+  mergeObservations(initialReadings);
+  try {
+    mergeObservations(await window.EnpiroDataCache?.getAll() || []);
+  } catch (_cacheError) {
+    // Private browsing modes may make IndexedDB unavailable; the network remains usable.
+  }
+  setRange(24);
+  rebuildMetricRows();
+  renderMetrics();
+  await loadRange();
+}
 
 const connectionStatus = document.querySelector("#connection-status");
 const socketUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/readings/`;
@@ -489,19 +609,23 @@ let reconnectTimer;
 let reconnectAttempt = 0;
 let pageClosing = false;
 
-function receiveReading(event) {
-  const reading = JSON.parse(event.data);
+async function acceptReading(reading) {
   if (reading.kind !== "environment") return;
-  const observedAt = new Date(reading.recorded_at);
-  const start = rangeStart.value ? new Date(rangeStart.value) : undefined;
-  const end = rangeEnd.value ? new Date(rangeEnd.value) : undefined;
-  if ((!start || observedAt >= start) && (!end || observedAt <= end)) {
-    Object.keys(metricConfig).forEach(metric => {
-      metricRows[metric].push({ recorded_at: reading.recorded_at, value: reading[metric] });
-    });
+  mergeObservations([reading]);
+  try {
+    await window.EnpiroDataCache?.putMany([reading]);
+  } catch (_cacheError) {
+    // Continue showing live data if durable browser storage is unavailable.
   }
+  if (rollingRangeHours !== null) setRange(rollingRangeHours);
+  rebuildMetricRows();
+  document.querySelector("#active-range-label").textContent = describeRange();
   document.querySelector("#last-recorded").textContent = `Last reading ${formatTime(reading.recorded_at)}`;
   renderMetrics();
+}
+
+function receiveReading(event) {
+  acceptReading(JSON.parse(event.data));
 }
 
 function scheduleReconnect() {
@@ -524,9 +648,15 @@ function connectSocket() {
   connectionStatus.textContent = reconnectAttempt ? "Reconnecting" : "Connecting";
   socket = new WebSocket(socketUrl);
   socket.addEventListener("open", () => {
+    const resumedConnection = reconnectAttempt > 0;
     reconnectAttempt = 0;
     connectionStatus.textContent = "Live · 3 minute cadence";
     document.body.classList.add("is-live");
+    if (resumedConnection) {
+      loadRange().catch(() => {
+        // Cached observations remain visible while a history request is unavailable.
+      });
+    }
   });
   socket.addEventListener("message", receiveReading);
   socket.addEventListener("close", () => {
@@ -539,15 +669,24 @@ function connectSocket() {
 window.addEventListener("online", () => {
   if (reconnectTimer) window.clearTimeout(reconnectTimer);
   reconnectTimer = undefined;
-  connectSocket();
+  resumeLiveData();
 });
 window.addEventListener("offline", () => {
   connectionStatus.textContent = "Offline · waiting for network";
   document.body.classList.remove("is-live");
   socket?.close();
 });
+async function resumeLiveData() {
+  connectSocket();
+  try {
+    await loadRange();
+  } catch (_requestError) {
+    // Cached observations remain visible until connectivity returns.
+  }
+}
+
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") connectSocket();
+  if (document.visibilityState === "visible") resumeLiveData();
 });
 window.addEventListener("pagehide", () => {
   pageClosing = true;
@@ -555,4 +694,7 @@ window.addEventListener("pagehide", () => {
   socket?.close();
 });
 
+initializeData().catch(requestError => {
+  document.querySelector("#active-range-label").textContent = requestError.message;
+});
 connectSocket();

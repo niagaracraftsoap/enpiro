@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     "channels",
     "core",
     "measurements",
-    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
