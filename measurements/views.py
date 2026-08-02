@@ -3,13 +3,14 @@ import secrets
 from datetime import datetime, time
 
 from django.conf import settings
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .repository import (
     environmental_history,
+    environmental_history_iterator,
     latest_environmental_observation,
 )
 from .services import reset_dataset
@@ -20,6 +21,14 @@ METRICS = {
     "pressure_hpa": ("Pressure", "hPa"),
 }
 RESET_PASSWORD = "hardcodedresetpassword"
+
+
+class _CsvStream:
+    """Give csv.writer the file-like interface expected by StreamingHttpResponse."""
+
+    @staticmethod
+    def write(value):
+        return value
 
 
 def _parse_range(request):
@@ -51,7 +60,8 @@ def _parse_range(request):
 
 def _history_response(request, *, csv_export=False):
     metric = request.GET.get("metric", "temperature_c")
-    if not csv_export and metric not in METRICS:
+    bundled = not csv_export and metric == "all"
+    if not csv_export and metric not in METRICS and not bundled:
         return JsonResponse({"detail": "Unknown metric."}, status=400)
     if csv_export:
         requested = request.GET.get("metrics", metric)
@@ -64,20 +74,34 @@ def _history_response(request, *, csv_export=False):
     except ValueError as error:
         return JsonResponse({"detail": str(error)}, status=400)
 
-    values = environmental_history(limit=None, start=start, end=end)
     if csv_export:
-        response = HttpResponse(content_type="text/csv")
+        async def rows():
+            writer = csv.writer(_CsvStream())
+            yield writer.writerow(("recorded_at", *metrics))
+            async for value in environmental_history_iterator(start=start, end=end):
+                yield writer.writerow(
+                    (
+                        value.observed_at.isoformat(),
+                        *(getattr(value, item) for item in metrics),
+                    )
+                )
+
+        response = StreamingHttpResponse(rows(), content_type="text/csv")
         name = "environment" if len(metrics) > 1 else metrics[0]
         response["Content-Disposition"] = (
             f'attachment; filename="warehouse-{name}-history.csv"'
         )
-        writer = csv.writer(response)
-        writer.writerow(("recorded_at", *metrics))
-        for value in values:
-            writer.writerow(
-                (value.observed_at.isoformat(), *(getattr(value, item) for item in metrics))
-            )
+        response["X-Accel-Buffering"] = "no"
         return response
+
+    values = environmental_history(limit=None, start=start, end=end)
+    if bundled:
+        return JsonResponse(
+            {
+                "metrics": list(METRICS),
+                "readings": [value.as_dict() for value in values],
+            }
+        )
 
     label, unit = METRICS[metric]
     return JsonResponse(

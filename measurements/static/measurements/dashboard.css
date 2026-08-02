@@ -19,17 +19,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #002b36;
-    --paper-deep: #073642;
-    --ink: #93a1a1;
-    --muted: #839496;
-    --subdued: #586e75;
-    --success: #859900;
-    --warning: #cb4b16;
-    --condition-danger: #dc322f;
-    --danger: #dc322f;
-    --backdrop: rgba(0, 43, 54, .8);
+    --paper: #130b03;
+    --paper-deep: #2b1807;
+    --ink: #ffb000;
+    --muted: #d78316;
+    --subdued: #815019;
+    --success: #ffd06a;
+    --warning: #ff9400;
+    --condition-danger: #ff5f00;
+    --danger: #ff5f00;
+    --backdrop: rgba(19, 11, 3, .84);
     color-scheme: dark;
+  }
+
+  body {
+    text-shadow: 0 0 .4rem rgba(255, 176, 0, .16);
+  }
+
+  .sparkline__line,
+  .sparkline__pointer {
+    filter: drop-shadow(0 0 2px rgba(255, 176, 0, .35));
   }
 }
 

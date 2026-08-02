@@ -5,6 +5,7 @@ from channels.layers import get_channel_layer
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 from django.conf import settings
+from django.http import StreamingHttpResponse
 from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
@@ -19,6 +20,7 @@ from .semantic import (
     encode_pressure,
     encode_temperature,
 )
+from .repository import environmental_history
 from .services import save_quick_check
 
 
@@ -74,6 +76,10 @@ class SemanticEncodingTests(TestCase):
 
 
 class DashboardTests(TestCase):
+    @staticmethod
+    async def consume_stream(response):
+        return b"".join([chunk async for chunk in response.streaming_content]).decode()
+
     def test_admin_route_is_not_available(self):
         """Keep Django Admin out of the monitor's public URL surface."""
         response = self.client.get("/admin/")
@@ -105,6 +111,8 @@ class DashboardTests(TestCase):
             settings.WAREHOUSE_CONDITION_THRESHOLDS,
         )
         self.assertContains(dashboard, "measurements/data-cache.js")
+        for hours in (48, 72, 96):
+            self.assertContains(dashboard, f'data-hours="{hours}"')
         self.assertLess(
             dashboard.content.index(b"measurements/data-cache.js"),
             dashboard.content.index(b"measurements/dashboard.js"),
@@ -136,16 +144,58 @@ class DashboardTests(TestCase):
         self.assertEqual([row["value"] for row in response.json()["readings"]], [21.5])
 
         response = self.client.get(
+            reverse("measurements:reading-history"),
+            {"metric": "all", "start": "2026-07-30", "end": "2026-07-30"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["readings"]), 1)
+        self.assertEqual(response.json()["readings"][0]["temperature_c"], 21.5)
+        self.assertEqual(
+            response.json()["metrics"],
+            ["temperature_c", "relative_humidity", "pressure_hpa"],
+        )
+
+        response = self.client.get(
             reverse("measurements:reading-history-csv"),
             {"metrics": "all"},
         )
         self.assertEqual(response.status_code, 200)
-        content = response.content.decode()
+        self.assertIsInstance(response, StreamingHttpResponse)
+        content = async_to_sync(self.consume_stream)(response)
         self.assertIn(
             "recorded_at,temperature_c,relative_humidity,pressure_hpa",
             content,
         )
         self.assertIn("21.5,43.0,1012.0", content)
+
+        response = self.client.get(
+            reverse("measurements:reading-history-csv"),
+            {
+                "metrics": "temperature_c",
+                "start": "2026-07-30",
+                "end": "2026-07-30",
+            },
+        )
+        content = async_to_sync(self.consume_stream)(response)
+        self.assertIn("2026-07-30T12:00:00+00:00,21.5", content)
+        self.assertNotIn("2026-07-29T12:00:00+00:00", content)
+
+    def test_history_filters_in_database_and_batches_symbol_loading(self):
+        for day in range(1, 6):
+            create_quick_check(
+                datetime(2026, 7, day, 12, tzinfo=timezone.utc),
+                20 + day,
+                40 + day,
+                1010 + day,
+            )
+
+        with self.assertNumQueries(1):
+            values = environmental_history(
+                limit=None,
+                start=datetime(2026, 7, 4, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual([value.temperature_c for value in values], [24.0, 25.0])
 
     def test_history_rejects_invalid_metric_range_and_csv_selection(self):
         """Reject unsupported fields and ranges instead of returning misleading data."""

@@ -353,8 +353,8 @@ async function persistRangePreference() {
   }
 }
 
-function rangeQuery(metric) {
-  const params = new URLSearchParams({ metric });
+function rangeQuery() {
+  const params = new URLSearchParams({ metric: "all" });
   if (rangeStart.value) params.set("start", utcQueryValue(rangeStart.value));
   if (rangeEnd.value) params.set("end", utcQueryValue(rangeEnd.value));
   return params;
@@ -561,25 +561,10 @@ function markDisplayedRangeStale() {
 async function loadRange({ showStale = false } = {}) {
   if (rollingRangeHours !== null) setRange(rollingRangeHours);
   if (showStale) markDisplayedRangeStale();
-  const payloadRequest = Promise.all(Object.keys(metricConfig).map(async metric => {
-    const response = await fetch(`${endpoints.historyUrl}?${rangeQuery(metric)}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || "History request failed.");
-    return payload;
-  }));
-  const payloads = await payloadRequest;
-  const fetched = new Map();
-  payloads.forEach(payload => {
-    payload.readings.forEach(row => {
-      const reading = fetched.get(row.recorded_at) || {
-        kind: "environment",
-        recorded_at: row.recorded_at,
-      };
-      reading[payload.metric] = row.value;
-      fetched.set(row.recorded_at, reading);
-    });
-  });
-  const completeReadings = [...fetched.values()].filter(validObservation);
+  const response = await fetch(`${endpoints.historyUrl}?${rangeQuery()}`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || "History request failed.");
+  const completeReadings = payload.readings.filter(validObservation);
   const fetchedTimes = new Set(completeReadings.map(reading => reading.recorded_at));
   const { start, end } = selectedBounds();
   const removedTimes = [...observations.values()]

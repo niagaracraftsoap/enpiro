@@ -70,6 +70,9 @@ def encode_pressure(value):
 
 
 def ordered_bytes(term):
+    prefetched = getattr(term, "_ordered_symbols", None)
+    if prefetched is not None:
+        return [bytes(relation.symbol) for relation in prefetched]
     return [
         bytes(relation.symbol)
         for relation in term.termsymbol_set.select_related("symbol").order_by("order")
@@ -99,15 +102,27 @@ def create_quick_check(
     *,
     symbol_cache=None,
 ):
-    return create_term(
-        (
-            encode_timestamp(observed_at),
-            encode_temperature(temperature_c),
-            encode_pressure(pressure_hpa),
-            encode_humidity(relative_humidity),
-        ),
-        symbol_cache,
-    )
+    from .models import QuickCheckIndex
+
+    with transaction.atomic():
+        term = create_term(
+            (
+                encode_timestamp(observed_at),
+                encode_temperature(temperature_c),
+                encode_pressure(pressure_hpa),
+                encode_humidity(relative_humidity),
+            ),
+            symbol_cache,
+        )
+        value = decode_quick_check(term)
+        QuickCheckIndex.objects.create(
+            term=term,
+            observed_at=value.observed_at,
+            temperature_c=value.temperature_c,
+            relative_humidity=value.relative_humidity,
+            pressure_hpa=value.pressure_hpa,
+        )
+        return term
 
 
 def decode_quick_check(term):

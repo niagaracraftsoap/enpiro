@@ -33,3 +33,20 @@ class QuickCheck(Term):
         from .semantic import decode_quick_check
 
         return decode_quick_check(self)
+
+
+class QuickCheckIndex(models.Model):
+    """Queryable projection of a semantic QuickCheck term."""
+
+    term = models.OneToOneField(
+        Term,
+        on_delete=models.CASCADE,
+        related_name="quick_check_index",
+    )
+    observed_at = models.DateTimeField(db_index=True)
+    temperature_c = models.FloatField()
+    relative_humidity = models.FloatField()
+    pressure_hpa = models.FloatField()
+
+    class Meta:
+        ordering = ["observed_at"]
