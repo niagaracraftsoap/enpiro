@@ -16,8 +16,7 @@ const metricConfig = {
   pressure_hpa: { label: "Atmospheric pressure", unit: "hPa", decimals: 1, stableSlope: 0.5 },
 };
 const trendWindows = [6, 12, 30];
-const expectedCadenceMs = 3 * 60_000;
-const missingAfterMs = expectedCadenceMs * 2;
+const missingAfterMs = 10 * 60_000;
 const rangePreferenceKey = "graph-range";
 
 const metricRows = Object.fromEntries(
