@@ -11,32 +11,32 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
-import base64
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+def _credential(name):
+    directory = os.environ.get("CREDENTIALS_DIRECTORY")
+    if not directory:
+        return None
+    return Path(directory, name).read_text(encoding="utf-8").strip()
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-development-only-change-me",
+
+# The deployed user unit supplies this with LoadCredentialEncrypted=. The
+# fallback exists only for local management commands and disposable test DBs.
+SECRET_KEY = _credential("django_secret_key") or (
+    "django-insecure-local-commands-and-tests-only"
 )
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes"}
-
+DEBUG = False
 ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.environ.get(
-        "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,enpiro.local"
-    ).split(",")
-    if host.strip()
+    "piagara.local",
+    "weather.maplegold.ca",
+    "localhost",
+    "127.0.0.1",
 ]
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 # Application definition
@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     "channels",
     "core",
     "measurements",
-    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -56,6 +55,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -84,24 +84,24 @@ TEMPLATES = [
 WSGI_APPLICATION = 'enpiro.wsgi.application'
 ASGI_APPLICATION = "enpiro.asgi.application"
 
-# A single-process, in-memory layer is suitable for initial development on the Pi.
-# TODO: Use channels_redis if WebSocket messages must cross multiple processes.
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": ["redis://127.0.0.1:6379/0"],
+        },
     }
 }
 
-# Shared Term/Symbol substrate. Clear environmental atoms do not use this key;
-# it is required only when encrypted Symbols are introduced.
-ANCHOR = os.environ.get(
-    "SUBSTRATE_ANCHOR",
-    base64.b64encode(b"development-only-substrate-anchor").decode(),
-)
-ROOT_KEY_ROTATION_SECONDS = int(
-    os.environ.get("ROOT_KEY_ROTATION_SECONDS", str(30 * 24 * 60 * 60))
-)
-
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    }
+}
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -138,11 +138,31 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = os.environ.get("DJANGO_TIME_ZONE", "America/Toronto")
+TIME_ZONE = "America/Toronto"
 
 USE_I18N = True
 
 USE_TZ = True
+
+WAREHOUSE_CONDITION_THRESHOLDS = {
+    "temperature_c": {
+        "green_min": 15.0,
+        "green_max": 25.0,
+        "red_min": 5.0,
+        "red_max": 30.0,
+    },
+    "relative_humidity": {
+        "green_min": 35.0,
+        "green_max": 60.0,
+        "red_min": 25.0,
+        "red_max": 70.0,
+    },
+}
+
+BME690_I2C_ADDRESS = 0x76
+BME690_SAMPLES_PER_OBSERVATION = 9
+BME690_SAMPLE_INTERVAL = 1.0
+BME690_OUTLIER_THRESHOLD = 3.5
 
 
 # Static files (CSS, JavaScript, Images)
@@ -150,6 +170,15 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+WHITENOISE_MAX_AGE = 300
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

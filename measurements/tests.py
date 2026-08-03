@@ -1,21 +1,43 @@
+import os
+import struct
 from datetime import datetime, timezone
+from unittest import skipUnless
 
-from django.core.management import call_command
-from django.test import TestCase
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from channels.routing import URLRouter
+from channels.testing import WebsocketCommunicator
+from django.conf import settings
+from django.http import StreamingHttpResponse
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
-from .models import AirQualityAssessment, QuickCheck
+from core.models import Symbol, Term
+
+from .checks import check_condition_thresholds
+from .models import QuickCheck
+from .routing import websocket_urlpatterns
 from .semantic import (
-    AssessmentCheck,
-    create_air_quality_assessment,
+    create_term,
     create_quick_check,
+    decode_quick_check,
+    encode_humidity,
+    encode_pressure,
     encode_temperature,
+    encode_timestamp,
 )
+from .repository import environmental_history
 from .services import save_quick_check
+
+
+TEST_CHANNEL_LAYERS = {
+    "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+}
 
 
 class SemanticEncodingTests(TestCase):
     def test_equal_values_share_symbols_across_terms(self):
+        """Protect value deduplication without conflating unequal observations."""
         first = create_quick_check(
             datetime(2025, 7, 1, tzinfo=timezone.utc),
             21.25,
@@ -39,53 +61,311 @@ class SemanticEncodingTests(TestCase):
         self.assertNotEqual(first_symbols[3], second_symbols[3])
         self.assertNotEqual(first_symbols[0], second_symbols[0])
         decoded = QuickCheck.objects.get(pk=first.pk).value
+        self.assertEqual(decoded.temperature_c, 21.3)
+        self.assertEqual(decoded.pressure_hpa, 1012.0)
+        self.assertEqual(decoded.relative_humidity, 48.0)
+
+    def test_measurements_have_quantized_two_byte_encodings(self):
+        """Keep the documented compact precision and width of measurement atoms."""
+        self.assertEqual(len(encode_temperature(21.25)), 2)
+        self.assertEqual(len(encode_humidity(48.04)), 2)
+        self.assertEqual(len(encode_pressure(1012.4)), 2)
+        self.assertEqual(encode_temperature(21.34), encode_temperature(21.3))
+        self.assertEqual(encode_humidity(48.04), encode_humidity(48.0))
+        self.assertEqual(encode_pressure(1012.4), encode_pressure(1012))
+
+    def test_repeated_values_create_only_one_symbol(self):
+        """Ensure repeated observations benefit from substrate-level deduplication."""
+        for minute in range(3):
+            create_quick_check(
+                datetime(2025, 7, 1, 0, minute, tzinfo=timezone.utc),
+                21.25,
+                48.0,
+                1012.4,
+            )
+        self.assertEqual(Symbol.objects.filter(symbol=encode_temperature(21.25)).count(), 1)
+
+    def test_legacy_precise_observations_remain_decodable(self):
+        term = create_term(
+            (
+                encode_timestamp(datetime(2025, 7, 1, tzinfo=timezone.utc)),
+                struct.pack(">h", 2125),
+                struct.pack(">I", 101240),
+                struct.pack(">H", 4800),
+            )
+        )
+
+        decoded = decode_quick_check(term)
+
+        self.assertEqual(decoded.temperature_c, 21.25)
         self.assertEqual(decoded.pressure_hpa, 1012.4)
         self.assertEqual(decoded.relative_humidity, 48.0)
 
-    def test_temperature_has_canonical_two_byte_encoding(self):
-        self.assertEqual(len(encode_temperature(21.25)), 2)
 
-    def test_air_quality_is_an_independent_term(self):
-        assessment = create_air_quality_assessment(
-            datetime(2025, 7, 1, 0, 20, tzinfo=timezone.utc),
-            87,
-            AssessmentCheck.ASSESSMENT_VALID,
-        )
-        value = AirQualityAssessment.objects.get(pk=assessment.pk).value
-        self.assertEqual(value.percentage, 87)
-        self.assertTrue(value.valid)
-
-
+@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class DashboardTests(TestCase):
+    def test_admin_route_is_not_available(self):
+        """Keep Django Admin out of the monitor's public URL surface."""
+        response = self.client.get("/admin/")
+        self.assertEqual(response.status_code, 404)
+
     def test_empty_latest_endpoint_returns_404(self):
+        """Give API clients an explicit no-data response before collection begins."""
         response = self.client.get(reverse("measurements:latest-reading"))
         self.assertEqual(response.status_code, 404)
 
-    def test_dashboard_and_api_join_latest_independent_streams(self):
+    def test_dashboard_and_latest_api_show_environment(self):
+        """Keep the initial page and latest API aligned with the stored observation."""
         save_quick_check(
             temperature_c=20.5,
             relative_humidity=42.0,
             pressure_hpa=1012.3,
         )
-        create_air_quality_assessment(
-            datetime.now(timezone.utc),
-            91,
-            AssessmentCheck.ASSESSMENT_VALID,
-        )
         response = self.client.get(reverse("measurements:latest-reading"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["environment"]["temperature_c"], 20.5)
+        self.assertNotIn("air_quality", response.json())
+
+        dashboard = self.client.get(reverse("measurements:dashboard"))
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.content.count(b'class="condition-indicator"'), 2)
+        self.assertContains(dashboard, 'id="condition-thresholds"')
         self.assertEqual(
-            response.json()["air_quality"]["air_quality_percentage"],
-            91,
+            dashboard.context["condition_thresholds"],
+            settings.WAREHOUSE_CONDITION_THRESHOLDS,
         )
-
-
-class SeedSummerTests(TestCase):
-    def test_creates_asynchronous_semantic_terms(self):
-        call_command("seed_summer", year=2025, interval_minutes=1440, verbosity=0)
-        self.assertEqual(QuickCheck.objects.count(), 92)
+        self.assertContains(dashboard, "measurements/data-cache.js")
+        self.assertContains(dashboard, "Localizing latest reading")
+        for hours in (48, 72, 96):
+            self.assertContains(dashboard, f'data-hours="{hours}"')
         self.assertLess(
-            AirQualityAssessment.objects.count(),
-            QuickCheck.objects.count(),
+            dashboard.content.index(b"measurements/data-cache.js"),
+            dashboard.content.index(b"measurements/dashboard.js"),
         )
+
+    def test_history_filters_metric_and_exports_csv(self):
+        """Protect date filtering and the complete, restorable CSV export contract."""
+        create_quick_check(
+            datetime(2026, 7, 29, 12, tzinfo=timezone.utc),
+            20.5,
+            42,
+            1012.3,
+        )
+        create_quick_check(
+            datetime(2026, 7, 30, 12, tzinfo=timezone.utc),
+            21.5,
+            43,
+            1011.8,
+        )
+        response = self.client.get(
+            reverse("measurements:reading-history"),
+            {
+                "metric": "temperature_c",
+                "start": "2026-07-30",
+                "end": "2026-07-30",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["value"] for row in response.json()["readings"]], [21.5])
+
+        response = self.client.get(
+            reverse("measurements:reading-history"),
+            {"metric": "all", "start": "2026-07-30", "end": "2026-07-30"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["readings"]), 1)
+        self.assertEqual(response.json()["readings"][0]["temperature_c"], 21.5)
+        self.assertEqual(
+            response.json()["metrics"],
+            ["temperature_c", "relative_humidity", "pressure_hpa"],
+        )
+
+        response = self.client.get(
+            reverse("measurements:reading-history-csv"),
+            {"metrics": "all"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response, StreamingHttpResponse)
+        self.assertTrue(response.is_async)
+        self.assertEqual(
+            response["Content-Disposition"],
+            'attachment; filename="warehouse-environment-history.csv"',
+        )
+
+    def test_history_filters_in_database_and_batches_symbol_loading(self):
+        for day in range(1, 6):
+            create_quick_check(
+                datetime(2026, 7, day, 12, tzinfo=timezone.utc),
+                20 + day,
+                40 + day,
+                1010 + day,
+            )
+
+        with self.assertNumQueries(1):
+            values = environmental_history(
+                limit=None,
+                start=datetime(2026, 7, 4, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual([value.temperature_c for value in values], [24.0, 25.0])
+
+    def test_history_rejects_invalid_metric_range_and_csv_selection(self):
+        """Reject unsupported fields and ranges instead of returning misleading data."""
+        self.assertEqual(
+            self.client.get(
+                reverse("measurements:reading-history"),
+                {"metric": "air_quality"},
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse("measurements:reading-history"),
+                {"start": "2026-07-31", "end": "2026-07-30"},
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse("measurements:reading-history-csv"),
+                {"metrics": "temperature_c,air_quality"},
+            ).status_code,
+            400,
+        )
+
+    def test_reset_requires_post_and_both_confirmations(self):
+        """Prevent recorded history from being erased by an incomplete reset request."""
+        save_quick_check(
+            temperature_c=20.5,
+            relative_humidity=42.0,
+            pressure_hpa=1012.3,
+        )
+        url = reverse("measurements:reset-readings")
+
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertEqual(
+            self.client.post(
+                url,
+                {
+                    "confirmation": "RESET",
+                    "password": "hardcodedresetpassword",
+                },
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                url,
+                {
+                    "acknowledge_export": "yes",
+                    "confirmation": "reset",
+                    "password": "hardcodedresetpassword",
+                },
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                url,
+                {
+                    "acknowledge_export": "yes",
+                    "confirmation": "RESET",
+                    "password": "wrong",
+                },
+            ).status_code,
+            400,
+        )
+        self.assertEqual(Term.objects.count(), 1)
+
+    def test_reset_deletes_terms_and_orphaned_symbols(self):
+        """Verify a confirmed reset clears observations and unreferenced storage."""
+        save_quick_check(
+            temperature_c=20.5,
+            relative_humidity=42.0,
+            pressure_hpa=1012.3,
+        )
+
+        response = self.client.post(
+            reverse("measurements:reset-readings"),
+            {
+                "acknowledge_export": "yes",
+                "confirmation": "RESET",
+                "password": "hardcodedresetpassword",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["terms_deleted"], 1)
+        self.assertEqual(Term.objects.count(), 0)
+        self.assertEqual(Symbol.objects.count(), 0)
+
+
+class ConfigurationTests(SimpleTestCase):
+    def test_default_condition_thresholds_are_ordered(self):
+        """Keep the shipped condition bands valid under the application's own check."""
+        self.assertEqual(check_condition_thresholds(None), [])
+
+    @override_settings(
+        WAREHOUSE_CONDITION_THRESHOLDS={
+            "temperature_c": {
+                "red_min": 5,
+                "green_min": 25,
+                "green_max": 15,
+                "red_max": 30,
+            },
+            "relative_humidity": {
+                "red_min": 25,
+                "green_min": 35,
+                "green_max": 60,
+                "red_max": 70,
+            },
+        }
+    )
+    def test_invalid_condition_thresholds_fail_system_check(self):
+        """Catch inverted condition bands during Django's deployment checks."""
+        errors = check_condition_thresholds(None)
+        self.assertEqual([error.id for error in errors], ["measurements.E001"])
+
+
+@skipUnless(
+    os.environ.get("ENPIRO_INTEGRATION_TESTS"),
+    "requires a reachable Redis channel layer",
+)
+class WebsocketTests(TransactionTestCase):
+    def test_environmental_group_update_reaches_connected_client(self):
+        """Protect live delivery, including group membership after reconnection."""
+        async def scenario():
+            communicator = WebsocketCommunicator(
+                URLRouter(websocket_urlpatterns),
+                "/ws/readings/",
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            reading = {
+                "kind": "environment",
+                "recorded_at": "2026-07-30T18:00:00+00:00",
+                "temperature_c": 22.5,
+                "relative_humidity": 51.2,
+                "pressure_hpa": 977.4,
+            }
+            await get_channel_layer().group_send(
+                "environmental_readings",
+                {"type": "reading.created", "reading": reading},
+            )
+            self.assertEqual(await communicator.receive_json_from(), reading)
+            await communicator.disconnect()
+
+            reconnected = WebsocketCommunicator(
+                URLRouter(websocket_urlpatterns),
+                "/ws/readings/",
+            )
+            connected, _subprotocol = await reconnected.connect()
+            self.assertTrue(connected)
+            await get_channel_layer().group_send(
+                "environmental_readings",
+                {"type": "reading.created", "reading": reading},
+            )
+            self.assertEqual(await reconnected.receive_json_from(), reading)
+            await reconnected.disconnect()
+
+        async_to_sync(scenario)()

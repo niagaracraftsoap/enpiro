@@ -1,0 +1,8 @@
+[Unit]
+Description=Record one robustly averaged BME690 environmental observation
+After=local-fs.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/src/enpiro
+ExecStart=%h/src/enpiro/venv/bin/python manage.py record_sensor

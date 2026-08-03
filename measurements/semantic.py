@@ -1,7 +1,7 @@
 import struct
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import IntFlag
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
@@ -9,14 +9,6 @@ from core.models import Symbol, Term, TermSymbol
 
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-
-class AssessmentCheck(IntFlag):
-    INPUTS_PLAUSIBLE = 1 << 0
-    GAS_STABILIZED = 1 << 1
-    HEATER_PROFILE_COMPLETE = 1 << 2
-    TREND_PLAUSIBLE = 1 << 3
-    ASSESSMENT_VALID = 1 << 4
 
 
 @dataclass(frozen=True)
@@ -34,27 +26,6 @@ class ObservationValue:
             "relative_humidity": self.relative_humidity,
             "pressure_hpa": self.pressure_hpa,
         }
-
-
-@dataclass(frozen=True)
-class AssessmentValue:
-    observed_at: datetime
-    percentage: int
-    check: AssessmentCheck
-
-    @property
-    def valid(self):
-        return bool(self.check & AssessmentCheck.ASSESSMENT_VALID)
-
-    def as_dict(self):
-        return {
-            "kind": "air_quality",
-            "recorded_at": self.observed_at.isoformat(),
-            "air_quality_percentage": self.percentage,
-            "check": int(self.check),
-            "valid": self.valid,
-        }
-
 
 def encode_timestamp(value):
     if value.tzinfo is None:
@@ -74,27 +45,34 @@ def decode_timestamp(value):
 
 
 def encode_temperature(value):
-    encoded = round(float(value) * 100)
+    encoded = int(
+        (Decimal(str(value)) * 10).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
     if not -32768 <= encoded <= 32767:
         raise ValueError("Temperature is outside the canonical range")
     return struct.pack(">h", encoded)
 
 
 def encode_humidity(value):
-    encoded = round(float(value) * 100)
-    if not 0 <= encoded <= 10_000:
+    encoded = int(
+        (Decimal(str(value)) * 10).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    if not 0 <= encoded <= 1_000:
         raise ValueError("Relative humidity must be between 0 and 100")
     return struct.pack(">H", encoded)
 
 
 def encode_pressure(value):
-    encoded = round(float(value) * 100)
-    if not 0 <= encoded <= 0xFFFFFFFF:
+    encoded = int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if not 0 <= encoded <= 0xFFFF:
         raise ValueError("Pressure is outside the canonical range")
-    return struct.pack(">I", encoded)
+    return struct.pack(">H", encoded)
 
 
 def ordered_bytes(term):
+    prefetched = getattr(term, "_ordered_symbols", None)
+    if prefetched is not None:
+        return [bytes(relation.symbol) for relation in prefetched]
     return [
         bytes(relation.symbol)
         for relation in term.termsymbol_set.select_related("symbol").order_by("order")
@@ -109,10 +87,7 @@ def create_term(atoms, symbol_cache=None):
         for order, atom in enumerate(atoms):
             symbol = cache.get(atom)
             if symbol is None:
-                result = Symbol.objects.get_or_create(symbol=atom)
-                # The originating substrate manager returns a Symbol directly;
-                # Django's stock manager returns (Symbol, created).
-                symbol = result[0] if isinstance(result, tuple) else result
+                symbol = Symbol.objects.resolve_clear(atom)
                 cache[atom] = symbol
             relations.append(TermSymbol(term=term, symbol=symbol, order=order))
         TermSymbol.objects.bulk_create(relations)
@@ -127,52 +102,44 @@ def create_quick_check(
     *,
     symbol_cache=None,
 ):
-    return create_term(
-        (
-            encode_timestamp(observed_at),
-            encode_temperature(temperature_c),
-            encode_pressure(pressure_hpa),
-            encode_humidity(relative_humidity),
-        ),
-        symbol_cache,
-    )
+    from .models import QuickCheckIndex
 
-
-def create_air_quality_assessment(
-    observed_at,
-    percentage,
-    check,
-    *,
-    symbol_cache=None,
-):
-    percentage = int(round(percentage))
-    if not 0 <= percentage <= 100:
-        raise ValueError("Air quality assessment must be between 0 and 100")
-    check = AssessmentCheck(check)
-    return create_term(
-        (
-            encode_timestamp(observed_at),
-            struct.pack("B", percentage),
-            struct.pack("B", int(check)),
-        ),
-        symbol_cache,
-    )
+    with transaction.atomic():
+        term = create_term(
+            (
+                encode_timestamp(observed_at),
+                encode_temperature(temperature_c),
+                encode_pressure(pressure_hpa),
+                encode_humidity(relative_humidity),
+            ),
+            symbol_cache,
+        )
+        value = decode_quick_check(term)
+        QuickCheckIndex.objects.create(
+            term=term,
+            observed_at=value.observed_at,
+            temperature_c=value.temperature_c,
+            relative_humidity=value.relative_humidity,
+            pressure_hpa=value.pressure_hpa,
+        )
+        return term
 
 
 def decode_quick_check(term):
     timestamp, temperature, pressure, humidity = ordered_bytes(term)
+    # Preserve observations written by the older high-precision local branch
+    # while all new readings use the compact production representation.
+    if len(pressure) == 4:
+        temperature_c = struct.unpack(">h", temperature)[0] / 100
+        relative_humidity = struct.unpack(">H", humidity)[0] / 100
+        pressure_hpa = struct.unpack(">I", pressure)[0] / 100
+    else:
+        temperature_c = struct.unpack(">h", temperature)[0] / 10
+        relative_humidity = struct.unpack(">H", humidity)[0] / 10
+        pressure_hpa = float(struct.unpack(">H", pressure)[0])
     return ObservationValue(
         observed_at=decode_timestamp(timestamp),
-        temperature_c=struct.unpack(">h", temperature)[0] / 100,
-        relative_humidity=struct.unpack(">H", humidity)[0] / 100,
-        pressure_hpa=struct.unpack(">I", pressure)[0] / 100,
-    )
-
-
-def decode_air_quality_assessment(term):
-    timestamp, percentage, check = ordered_bytes(term)
-    return AssessmentValue(
-        observed_at=decode_timestamp(timestamp),
-        percentage=struct.unpack("B", percentage)[0],
-        check=AssessmentCheck(struct.unpack("B", check)[0]),
+        temperature_c=temperature_c,
+        relative_humidity=relative_humidity,
+        pressure_hpa=pressure_hpa,
     )

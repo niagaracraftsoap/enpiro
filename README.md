@@ -1,110 +1,126 @@
 # Enpiro
 
-A lightweight Django and Channels service for recording and displaying
-environmental readings from a BME690 connected to a Raspberry Pi Zero 2 W.
+Enpiro is a warehouse environmental monitor for the space where we store soap
+and skincare products. It records temperature, relative humidity, and
+atmospheric pressure, presents current and historical readings in a web
+dashboard, and exports recorded data as CSV.
 
-## Local setup
+Temperature and humidity can affect the quality and longevity of the things we
+make. Atmospheric pressure is recorded alongside them as additional
+environmental context.
 
-```bash
-source venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py record_sample
-python manage.py runserver 0.0.0.0:8000
-```
+## Hardware
 
-Visit `http://localhost:8000/`. On the Pi, use its hostname or IP address.
-The development server is provided by Daphne because `daphne` is the first
-installed app.
+Enpiro runs on a [Raspberry Pi Zero 2 W](https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/).
+Its environmental readings come from a
+[Bosch BME690](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme690/)
+mounted on a
+[Pimoroni BME690 breakout](https://shop.pimoroni.com/products/bme690-breakout).
+The sensor measures temperature, relative humidity, and atmospheric pressure
+inside the warehouse.
 
-Configuration is read from environment variables listed in `.env.example`.
-Django does not load `.env` files itself; export those values from the shell or
-set them in the eventual systemd unit.
+At the hardware boundary, the
+[`bme690`](https://pypi.org/project/bme690/) library provides the sensor
+driver and [`smbus2`](https://pypi.org/project/smbus2/) provides access to the
+Pi's I²C bus.
 
-## Current endpoints
+## Collection
 
-- `/` — live dashboard
-- `/api/readings/latest/` — latest reading as JSON
-- `/ws/readings/` — live reading WebSocket
-- `/admin/` — Django admin
+The `record_sensor` management command collects nine sensor samples at
+one-second intervals. It applies multivariate median absolute deviation
+outlier rejection across temperature, pressure, and humidity, then averages
+the retained samples into one observation.
 
-## Semantic substrate
+A systemd timer runs the command every three minutes. Each saved observation
+is broadcast to connected dashboards over a WebSocket.
 
-Enpiro carries the reusable `RootKey`, `SystemKey`, `Symbol`, `Term`, and
-ordered `TermSymbol` substrate from `artofbodhi/core/models.py` as the local
-`core` app. Art of Bodhi's card envelope and project settings are intentionally
-not imported; environmental semantics live in `measurements/semantic.py`.
+## Storage
 
-The substrate remains domain-neutral. Enpiro uses proxy models and interprets
-two ordered Term shapes:
+Observations are stored in SQLite using Enpiro's `Term`/`Symbol` substrate.
+Each observation is represented by four ordered binary symbols:
 
-- Quick check: timestamp, temperature, pressure, humidity.
-- Air-quality assessment: timestamp, percentage, validation flags.
+1. A timezone-aware timestamp encoded as signed 64-bit microseconds since the
+   Unix epoch.
+2. Temperature encoded in tenths of a degree Celsius as a signed 16-bit
+   integer.
+3. Atmospheric pressure encoded in whole hectopascals as an unsigned 16-bit
+   integer.
+4. Relative humidity encoded in tenths of a percent as an unsigned 16-bit
+   integer.
 
-Every item is a canonical compact binary Symbol. Units and meaning come only
-from position in the environmental semantic layer; there are no field-name,
-unit, source, or schema-marker Symbols. Substrate `created_at`/`modified_at`
-remain internal—the first Symbol carries observation time.
+Equal encoded values share the same `Symbol` record. A `QuickCheck` proxy model
+selects four-symbol terms and decodes them into environmental observations for
+the rest of the application.
 
-The two streams are asynchronous. Gas resistance is transient calculation
-input and is never persisted. Record standalone test Terms with:
+## Web interface
 
-```bash
-python manage.py record_sample --temperature 21.5 --humidity 45 --pressure 1013.25
-python manage.py record_assessment 88
-```
+The application is built with [Django](https://www.djangoproject.com/).
+[Channels](https://channels.readthedocs.io/) and
+[Daphne](https://github.com/django/daphne) provide the ASGI and WebSocket
+layer. [Redis](https://redis.io/) backs the channel layer and Django cache, and
+[WhiteNoise](https://whitenoise.readthedocs.io/) serves static interface
+assets.
 
-## Demo data
+The dashboard provides:
 
-Generate hourly, seeded Niagara Falls summer weather for June through August
-2025:
+- Current temperature, relative humidity, and atmospheric pressure.
+- Historical graphs with selectable 24-hour, 7-day, 30-day, complete, and
+  custom ranges.
+- Temperature and humidity condition indicators using thresholds configured
+  in Django settings.
+- Trend summaries calculated from the displayed readings.
+- Live observations delivered over a WebSocket.
+- Domain-scoped IndexedDB caching for immediate recovery after tab closures,
+  device restarts, and temporary connectivity gaps.
+- CSV downloads for one or more measurements and a selected time range.
 
-```bash
-python manage.py seed_summer
-```
+The browser cache is a read-through copy, not the source of truth. Cached
+observations render immediately, then the selected range is reconciled with
+the server on page load, WebSocket reconnection, network recovery, and return
+from a background tab. Graph points are positioned by their observation
+timestamps so missed intervals remain visible instead of being compressed.
+Observed lines stop when consecutive samples are missing. Rough dashed waves
+mark those intervals and the chart labels them explicitly as non-data rather
+than presenting an interpolated slope as a measurement.
+Observation timestamps are recorded, transferred, and cached as UTC. The
+dashboard formats them in the browser's local timezone, and converts locally
+entered date ranges back to UTC before requesting data from the server.
 
-This creates 2,208 reproducible hourly observation Terms and 736 asynchronous
-air-quality assessment Terms. Assessments arrive twenty minutes after every
-third observation. Their gas inputs are transient. The dataset is synthetic,
-not historical observation. `--replace` replaces environmental Terms whose
-semantic timestamps fall within that summer.
+The JSON API exposes the latest observation and filtered measurement history.
+A complete CSV export can be imported into an empty dataset with the
+`import_readings_csv` management command.
 
-## Raspberry Pi and BME690
+The dashboard also includes a two-step reset flow. It offers a complete CSV
+export before requiring an acknowledgement, the word `RESET`, and the reset
+password. A successful reset deletes all observation terms and any symbols
+that are no longer referenced.
 
-The Pi-side Python I2C transport is included through `smbus2`. On Raspberry Pi
-OS/Debian, enable I2C and install the system tools:
+## Deployment
 
-```bash
-sudo raspi-config nonint do_i2c 0
-sudo apt update
-sudo apt install i2c-tools
-```
+The included deployment configuration runs:
 
-After rebooting, verify that the device appears at `0x76` or `0x77`, then read
-its identification registers:
+- Daphne under a systemd user service.
+- The sensor collection command from a persistent three-minute systemd timer.
+- nginx as the local reverse proxy.
+- Avahi service discovery for the local HTTP service.
+- Apache as the TLS terminator and external reverse proxy, including the
+  WebSocket route.
 
-```bash
-i2cdetect -y 1
-python manage.py probe_bme690
-```
+The Django secret key is loaded from a systemd credential. Production settings
+disable Django debug mode, trust the HTTPS proxy header, use SQLite for stored
+observations, and use separate Redis databases for Channels and caching.
 
-The BME690 variant ID should be `0x02`. This probe confirms communication but
-does not perform compensated measurements. Production sampling should wrap
-Bosch's official BME690 SensorAPI. Bosch BSEC 3.2 or newer is additionally
-required to calculate IAQ; BSEC is a separately licensed binary download and
-cannot be supplied as a normal pip dependency.
+## Tests
 
-## Next steps
+The automated test suite covers:
 
-- [ ] Confirm the BME690 breakout-board manufacturer and I2C address.
-- [ ] Integrate the official Bosch BME690 SensorAPI and, if its license is
-      suitable, the matching aarch64 BSEC 3.x binary.
-- [ ] Add a `record_sensor` command that writes quick checks and
-      asynchronous air-quality assessments at independently configured intervals.
-- [ ] Finalize the air-quality percentage calculation and validation flag rules;
-      keep raw gas resistance transient.
-- [ ] Add retention/downsampling rules so SQLite does not grow forever.
-- [ ] Add chart/history endpoints and sensor-health information.
-- [ ] Create systemd units for Daphne and the sensor recorder.
-- [ ] Set a production secret, disable debug mode, and put a reverse proxy/TLS
-      in front of the service if it will be reachable beyond the trusted LAN.
+- Shared symbols and semantic observation encoding.
+- Quantization and decoding of measurement values.
+- Sensor adaptation, robust averaging, and outlier rejection.
+- Dashboard, latest-reading, history, CSV, and reset endpoints.
+- Condition-threshold system checks.
+- WebSocket delivery.
+- Complete CSV import and empty-dataset enforcement.
+
+Hardware tests for the attached BME690 are opt-in so the regular suite can run
+without access to the sensor.
