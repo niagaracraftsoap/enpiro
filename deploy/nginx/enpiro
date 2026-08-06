@@ -6,7 +6,7 @@ server {
     gzip off;
 
     location /static/ {
-        alias /home/piagara/srv/enpiro/staticfiles/;
+        alias /home/piagara/src/enpiro/staticfiles/;
         access_log off;
         expires 1h;
     }
