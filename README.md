@@ -103,6 +103,9 @@ The included deployment configuration runs:
 - Avahi service discovery for the local HTTP service.
 - Apache as the TLS terminator and external reverse proxy.
 
+Run `manage.py collectstatic --noinput` as part of deployment updates (after
+pulling changes), rather than on every web-service restart.
+
 The Django secret key is loaded from a systemd credential. Production settings
 disable Django debug mode, trust the HTTPS proxy header, and use SQLite for
 stored observations.

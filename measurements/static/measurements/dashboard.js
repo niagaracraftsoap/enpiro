@@ -779,7 +779,7 @@ async function initializeData() {
 }
 
 const connectionStatus = document.querySelector("#connection-status");
-const pollIntervalMs = 15_000;
+const pollIntervalMs = 30_000;
 let pollingTimer;
 let isPolling = false;
 
