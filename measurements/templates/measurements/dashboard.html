@@ -234,7 +234,7 @@
 
   {{ reading_history|json_script:"reading-history" }}
   {{ condition_thresholds|json_script:"condition-thresholds" }}
-  <div id="endpoints" data-history-url="{% url 'measurements:reading-history' %}" data-csv-url="{% url 'measurements:reading-history-csv' %}" data-reset-url="{% url 'measurements:reset-readings' %}"></div>
+  <div id="endpoints" data-latest-url="{% url 'measurements:latest-reading' %}" data-history-url="{% url 'measurements:reading-history' %}" data-csv-url="{% url 'measurements:reading-history-csv' %}" data-reset-url="{% url 'measurements:reset-readings' %}"></div>
   <script src="{% static 'measurements/data-cache.js' %}" defer></script>
   <script src="{% static 'measurements/dashboard.js' %}" defer></script>
 </body>

@@ -1,8 +1,4 @@
 Django
-channels[daphne]
-channels_redis
-django-redis
-redis<8
 bme690
 smbus2
-whitenoise
+gunicorn

@@ -32,7 +32,7 @@ outlier rejection across temperature, pressure, and humidity, then averages
 the retained samples into one observation.
 
 A systemd timer runs the command every three minutes. Each saved observation
-is broadcast to connected dashboards over a WebSocket.
+is made available to dashboards through the JSON API.
 
 ## Storage
 
@@ -55,11 +55,9 @@ the rest of the application.
 ## Web interface
 
 The application is built with [Django](https://www.djangoproject.com/).
-[Channels](https://channels.readthedocs.io/) and
-[Daphne](https://github.com/django/daphne) provide the ASGI and WebSocket
-layer. [Redis](https://redis.io/) backs the channel layer and Django cache, and
-[WhiteNoise](https://whitenoise.readthedocs.io/) serves static interface
-assets.
+[Gunicorn](https://gunicorn.org/) runs the WSGI application. Local
+[nginx](https://nginx.org/) serves static interface assets and proxies dynamic
+requests to Gunicorn.
 
 The dashboard provides:
 
@@ -69,14 +67,14 @@ The dashboard provides:
 - Temperature and humidity condition indicators using thresholds configured
   in Django settings.
 - Trend summaries calculated from the displayed readings.
-- Live observations delivered over a WebSocket.
+- Live observations refreshed by lightweight polling of the latest-reading API.
 - Domain-scoped IndexedDB caching for immediate recovery after tab closures,
   device restarts, and temporary connectivity gaps.
 - CSV downloads for one or more measurements and a selected time range.
 
 The browser cache is a read-through copy, not the source of truth. Cached
 observations render immediately, then the selected range is reconciled with
-the server on page load, WebSocket reconnection, network recovery, and return
+the server on page load, periodic polling, network recovery, and return
 from a background tab. Graph points are positioned by their observation
 timestamps so missed intervals remain visible instead of being compressed.
 Observed lines stop when consecutive samples are missing. Rough dashed waves
@@ -99,16 +97,15 @@ that are no longer referenced.
 
 The included deployment configuration runs:
 
-- Daphne under a systemd user service.
+- Gunicorn under a systemd user service.
 - The sensor collection command from a persistent three-minute systemd timer.
-- nginx as the local reverse proxy.
+- nginx as the local reverse proxy and static file server.
 - Avahi service discovery for the local HTTP service.
-- Apache as the TLS terminator and external reverse proxy, including the
-  WebSocket route.
+- Apache as the TLS terminator and external reverse proxy.
 
 The Django secret key is loaded from a systemd credential. Production settings
-disable Django debug mode, trust the HTTPS proxy header, use SQLite for stored
-observations, and use separate Redis databases for Channels and caching.
+disable Django debug mode, trust the HTTPS proxy header, and use SQLite for
+stored observations.
 
 ## Tests
 
@@ -119,7 +116,6 @@ The automated test suite covers:
 - Sensor adaptation, robust averaging, and outlier rejection.
 - Dashboard, latest-reading, history, CSV, and reset endpoints.
 - Condition-threshold system checks.
-- WebSocket delivery.
 - Complete CSV import and empty-dataset enforcement.
 
 Hardware tests for the attached BME690 are opt-in so the regular suite can run

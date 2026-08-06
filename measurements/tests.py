@@ -1,22 +1,15 @@
 import os
 import struct
 from datetime import datetime, timezone
-from unittest import skipUnless
-
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-from channels.routing import URLRouter
-from channels.testing import WebsocketCommunicator
 from django.conf import settings
 from django.http import StreamingHttpResponse
-from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from core.models import Symbol, Term
 
 from .checks import check_condition_thresholds
 from .models import QuickCheck
-from .routing import websocket_urlpatterns
 from .semantic import (
     create_term,
     create_quick_check,
@@ -28,11 +21,6 @@ from .semantic import (
 )
 from .repository import environmental_history
 from .services import save_quick_check
-
-
-TEST_CHANNEL_LAYERS = {
-    "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
-}
 
 
 class SemanticEncodingTests(TestCase):
@@ -102,7 +90,6 @@ class SemanticEncodingTests(TestCase):
         self.assertEqual(decoded.relative_humidity, 48.0)
 
 
-@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class DashboardTests(TestCase):
     def test_admin_route_is_not_available(self):
         """Keep Django Admin out of the monitor's public URL surface."""
@@ -327,45 +314,3 @@ class ConfigurationTests(SimpleTestCase):
         self.assertEqual([error.id for error in errors], ["measurements.E001"])
 
 
-@skipUnless(
-    os.environ.get("ENPIRO_INTEGRATION_TESTS"),
-    "requires a reachable Redis channel layer",
-)
-class WebsocketTests(TransactionTestCase):
-    def test_environmental_group_update_reaches_connected_client(self):
-        """Protect live delivery, including group membership after reconnection."""
-        async def scenario():
-            communicator = WebsocketCommunicator(
-                URLRouter(websocket_urlpatterns),
-                "/ws/readings/",
-            )
-            connected, _subprotocol = await communicator.connect()
-            self.assertTrue(connected)
-            reading = {
-                "kind": "environment",
-                "recorded_at": "2026-07-30T18:00:00+00:00",
-                "temperature_c": 22.5,
-                "relative_humidity": 51.2,
-                "pressure_hpa": 977.4,
-            }
-            await get_channel_layer().group_send(
-                "environmental_readings",
-                {"type": "reading.created", "reading": reading},
-            )
-            self.assertEqual(await communicator.receive_json_from(), reading)
-            await communicator.disconnect()
-
-            reconnected = WebsocketCommunicator(
-                URLRouter(websocket_urlpatterns),
-                "/ws/readings/",
-            )
-            connected, _subprotocol = await reconnected.connect()
-            self.assertTrue(connected)
-            await get_channel_layer().group_send(
-                "environmental_readings",
-                {"type": "reading.created", "reading": reading},
-            )
-            self.assertEqual(await reconnected.receive_json_from(), reading)
-            await reconnected.disconnect()
-
-        async_to_sync(scenario)()

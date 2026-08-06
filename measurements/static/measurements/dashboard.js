@@ -779,11 +779,9 @@ async function initializeData() {
 }
 
 const connectionStatus = document.querySelector("#connection-status");
-const socketUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/readings/`;
-let socket;
-let reconnectTimer;
-let reconnectAttempt = 0;
-let pageClosing = false;
+const pollIntervalMs = 15_000;
+let pollingTimer;
+let isPolling = false;
 
 async function acceptReading(reading) {
   if (reading.kind !== "environment") return;
@@ -800,60 +798,51 @@ async function acceptReading(reading) {
   renderMetrics();
 }
 
-function receiveReading(event) {
-  acceptReading(JSON.parse(event.data));
-}
-
-function scheduleReconnect() {
-  if (pageClosing || reconnectTimer) return;
-  const base = Math.min(30_000, 1_000 * (2 ** reconnectAttempt));
-  const delay = Math.round(base * (0.8 + Math.random() * 0.4));
-  reconnectAttempt += 1;
-  connectionStatus.textContent = navigator.onLine
-    ? `Reconnecting in ${Math.max(1, Math.round(delay / 1000))}s`
-    : "Offline · waiting for network";
-  reconnectTimer = window.setTimeout(() => {
-    reconnectTimer = undefined;
-    connectSocket();
-  }, delay);
-}
-
-function connectSocket() {
-  if (pageClosing || !navigator.onLine) return scheduleReconnect();
-  if (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState)) return;
-  connectionStatus.textContent = reconnectAttempt ? "Reconnecting" : "Connecting";
-  socket = new WebSocket(socketUrl);
-  socket.addEventListener("open", () => {
-    const resumedConnection = reconnectAttempt > 0;
-    reconnectAttempt = 0;
-    connectionStatus.textContent = "Live · 3 minute cadence";
-    document.body.classList.add("is-live");
-    if (resumedConnection) {
-      loadRange().catch(() => {
-        // Cached observations remain visible while a history request is unavailable.
-      });
+async function pollLatest() {
+  if (isPolling || !navigator.onLine) return;
+  isPolling = true;
+  try {
+    const response = await fetch(endpoints.latestUrl, { headers: { Accept: "application/json" } });
+    const payload = await response.json();
+    if (!response.ok) {
+      connectionStatus.textContent = payload.detail || "Sync unavailable";
+      document.body.classList.remove("is-live");
+      return;
     }
-  });
-  socket.addEventListener("message", receiveReading);
-  socket.addEventListener("close", () => {
+    await acceptReading(payload.environment);
+    connectionStatus.textContent = "Live · polling";
+    document.body.classList.add("is-live");
+  } catch (_requestError) {
+    connectionStatus.textContent = "Offline · waiting for network";
     document.body.classList.remove("is-live");
-    scheduleReconnect();
-  });
-  socket.addEventListener("error", () => socket.close());
+  } finally {
+    isPolling = false;
+  }
+}
+
+function startPolling() {
+  if (pollingTimer) return;
+  pollLatest();
+  pollingTimer = window.setInterval(pollLatest, pollIntervalMs);
+}
+
+function stopPolling() {
+  if (!pollingTimer) return;
+  window.clearInterval(pollingTimer);
+  pollingTimer = undefined;
 }
 
 window.addEventListener("online", () => {
-  if (reconnectTimer) window.clearTimeout(reconnectTimer);
-  reconnectTimer = undefined;
+  startPolling();
   resumeLiveData();
 });
 window.addEventListener("offline", () => {
   connectionStatus.textContent = "Offline · waiting for network";
   document.body.classList.remove("is-live");
-  socket?.close();
+  stopPolling();
 });
 async function resumeLiveData() {
-  connectSocket();
+  startPolling();
   try {
     await loadRange();
   } catch (_requestError) {
@@ -865,12 +854,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") resumeLiveData();
 });
 window.addEventListener("pagehide", () => {
-  pageClosing = true;
-  if (reconnectTimer) window.clearTimeout(reconnectTimer);
-  socket?.close();
+  stopPolling();
 });
 
 initializeData().catch(requestError => {
   document.querySelector("#active-range-label").textContent = requestError.message;
 });
-connectSocket();
+connectionStatus.textContent = "Syncing";
+startPolling();
