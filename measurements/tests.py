@@ -1,6 +1,6 @@
 import os
 import struct
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from django.conf import settings
 from django.http import StreamingHttpResponse
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -178,6 +178,43 @@ class DashboardTests(TestCase):
             response["Content-Disposition"],
             'attachment; filename="warehouse-environment-history.csv"',
         )
+
+    def test_history_without_explicit_range_is_limited_to_recent_year(self):
+        now = datetime.now(timezone.utc)
+        create_quick_check(
+            now - timedelta(days=settings.INTERFACE_HISTORY_RETENTION_DAYS + 14),
+            19.5,
+            41,
+            1008,
+        )
+        create_quick_check(
+            now - timedelta(days=30),
+            20.5,
+            42,
+            1012,
+        )
+
+        response = self.client.get(
+            reverse("measurements:reading-history"),
+            {"metric": "all"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["readings"]), 1)
+        self.assertEqual(response.json()["readings"][0]["temperature_c"], 20.5)
+
+    def test_history_rejects_ranges_older_than_interface_retention(self):
+        response = self.client.get(
+            reverse("measurements:reading-history"),
+            {
+                "metric": "all",
+                "start": "2020-01-01",
+                "end": "2020-01-31",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Use CSV export for older data.", response.json()["detail"])
 
     def test_history_filters_in_database_and_batches_symbol_loading(self):
         for day in range(1, 6):

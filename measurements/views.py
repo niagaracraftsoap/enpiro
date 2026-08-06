@@ -1,6 +1,6 @@
 import csv
 import secrets
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
@@ -73,6 +73,23 @@ def _history_response(request, *, csv_export=False):
         start, end = _parse_range(request)
     except ValueError as error:
         return JsonResponse({"detail": str(error)}, status=400)
+
+    if not csv_export:
+        retention_start = timezone.now() - timedelta(
+            days=settings.INTERFACE_HISTORY_RETENTION_DAYS
+        )
+        if end is not None and end < retention_start:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Interactive history is limited to the most recent "
+                        f"{settings.INTERFACE_HISTORY_RETENTION_DAYS} days. "
+                        "Use CSV export for older data."
+                    )
+                },
+                status=400,
+            )
+        start = retention_start if start is None else max(start, retention_start)
 
     if csv_export:
         async def rows():

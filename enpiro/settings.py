@@ -67,8 +67,17 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [],
-        'APP_DIRS': True,
+        'APP_DIRS': False,
         'OPTIONS': {
+            'loaders': [
+                (
+                    'django.template.loaders.cached.Loader',
+                    [
+                        'django.template.loaders.filesystem.Loader',
+                        'django.template.loaders.app_directories.Loader',
+                    ],
+                ),
+            ],
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
@@ -140,6 +149,7 @@ BME690_I2C_ADDRESS = 0x76
 BME690_SAMPLES_PER_OBSERVATION = 9
 BME690_SAMPLE_INTERVAL = 1.0
 BME690_OUTLIER_THRESHOLD = 3.5
+INTERFACE_HISTORY_RETENTION_DAYS = 366
 
 
 # Static files (CSS, JavaScript, Images)
