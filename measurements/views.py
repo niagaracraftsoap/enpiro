@@ -92,10 +92,10 @@ def _history_response(request, *, csv_export=False):
         start = retention_start if start is None else max(start, retention_start)
 
     if csv_export:
-        async def rows():
+        def rows():
             writer = csv.writer(_CsvStream())
             yield writer.writerow(("recorded_at", *metrics))
-            async for value in environmental_history_iterator(start=start, end=end):
+            for value in environmental_history_iterator(start=start, end=end):
                 yield writer.writerow(
                     (
                         value.observed_at.isoformat(),
