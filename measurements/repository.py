@@ -1,9 +1,8 @@
 from django.db.models import Count, OuterRef, Prefetch, Subquery
 
-from core.models import Symbol, Term, TermSymbol
+from core.models import Term, TermSymbol
 
 from .semantic import (
-    ENVIRONMENT_SCHEMA,
     ENVIRONMENT_TERM_LENGTH,
     ObservationValue,
     decode_environmental_term,
@@ -17,13 +16,8 @@ def environmental_term_queryset(*, start=None, end=None):
     The schema marker and ordered TermSymbol relationships identify the
     semantic type. No decoded observation or secondary index is persisted.
     """
-    schema_symbols = Symbol.objects.filter(symbol=ENVIRONMENT_SCHEMA).values("pk")
-    matching_symbols = TermSymbol.objects.filter(
-        order=0,
-        symbol_id__in=schema_symbols,
-    ).values("term_id")
     queryset = (
-        Term.objects.filter(pk__in=matching_symbols)
+        Term.objects.all()
         .annotate(_symbol_count=Count("termsymbol"))
         .filter(_symbol_count=ENVIRONMENT_TERM_LENGTH)
         .prefetch_related(
@@ -58,10 +52,13 @@ def environmental_term_queryset(*, start=None, end=None):
 
 
 def _decode_ordered_terms(terms):
-    return sorted(
-        (decode_environmental_term(term) for term in terms),
-        key=lambda value: value.observed_at,
-    )
+    values = []
+    for term in terms:
+        try:
+            values.append(decode_environmental_term(term))
+        except ValueError:
+            continue
+    return sorted(values, key=lambda value: value.observed_at)
 
 
 def environmental_history(limit=48, *, start=None, end=None):
@@ -76,7 +73,10 @@ def environmental_history_iterator(*, start=None, end=None, chunk_size=1_000):
     """Yield substrate observations in bounded database chunks."""
     queryset = environmental_term_queryset(start=start, end=end)
     for term in queryset.iterator(chunk_size=chunk_size):
-        yield decode_environmental_term(term)
+        try:
+            yield decode_environmental_term(term)
+        except ValueError:
+            continue
 
 
 def latest_environmental_observation():
