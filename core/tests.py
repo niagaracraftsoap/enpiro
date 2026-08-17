@@ -26,6 +26,15 @@ class SubstrateTests(TestCase):
         )
         self.assertEqual(Symbol.objects.count(), 2)
 
+        second_symbols, second_created = Symbol.objects.resolve_clear_many(
+            [b"alpha", b"beta", b"alpha"]
+        )
+        self.assertFalse(second_created)
+        self.assertEqual(
+            [symbol.pk for symbol in symbols],
+            [symbol.pk for symbol in second_symbols],
+        )
+
     def test_single_blob_and_singleton_sequence_resolve_same_term(self):
         first = Term.objects.resolve_clear(b"alpha")
         second = Term.objects.resolve_clear([b"alpha"])
