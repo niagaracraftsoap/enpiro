@@ -2,7 +2,7 @@
 
 from django.core.validators import MaxLengthValidator
 from django.db import models, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 
 
 def _coerce_blob_sequence(value_or_values):
@@ -90,16 +90,22 @@ class Symbol(models.Model):
 
 class TermManager(models.Manager):
     def _find_exact(self, symbols):
-        queryset = self.get_queryset()
+        required = Q()
         for order, symbol in enumerate(symbols):
-            queryset = queryset.filter(
-                termsymbol__order=order,
-                termsymbol__symbol_id=symbol.pk,
-            )
+            required |= Q(order=order, symbol_id=symbol.pk)
+
+        matching_term_ids = (
+            TermSymbol.objects.filter(required)
+            .values("term_id")
+            .annotate(_matched_count=Count("id"))
+            .filter(_matched_count=len(symbols))
+            .values("term_id")
+        )
+
         return (
-            queryset.annotate(
-                _symbol_count=Count("termsymbol", distinct=True)
-            )
+            self.get_queryset()
+            .filter(pk__in=matching_term_ids)
+            .annotate(_symbol_count=Count("termsymbol"))
             .filter(_symbol_count=len(symbols))
             .first()
         )
