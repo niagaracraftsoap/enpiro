@@ -3,7 +3,7 @@ from django.utils import timezone
 
 from core.models import Symbol, Term
 
-from .semantic import resolve_environmental_observation
+from .semantic import LOCAL_SOURCE_ID, ObservationValue, resolve_environmental_observation
 
 
 def save_environmental_observation(
@@ -12,15 +12,15 @@ def save_environmental_observation(
     temperature_c,
     relative_humidity,
     pressure_hpa,
+    source_id=LOCAL_SOURCE_ID,
 ):
-    from .semantic import ObservationValue
-
     term = resolve_environmental_observation(
         ObservationValue(
             observed_at=observed_at or timezone.now(),
             temperature_c=temperature_c,
             relative_humidity=relative_humidity,
             pressure_hpa=pressure_hpa,
+            source_id=source_id,
         )
     )
     return term
