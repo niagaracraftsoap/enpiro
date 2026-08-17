@@ -12,7 +12,6 @@ from .checks import check_condition_thresholds
 from .semantic import (
     create_term,
     decode_environmental_term,
-    ENVIRONMENT_SCHEMA,
     encode_humidity,
     encode_pressure,
     encode_temperature,
@@ -64,6 +63,7 @@ class SemanticEncodingTests(TestCase):
         self.assertEqual(decoded.temperature_c, 21.3)
         self.assertEqual(decoded.pressure_hpa, 1012.0)
         self.assertEqual(decoded.relative_humidity, 48.0)
+        self.assertEqual(decoded.source_id, "local")
 
     def test_measurements_have_quantized_two_byte_encodings(self):
         """Keep the documented compact precision and width of measurement atoms."""
@@ -88,7 +88,7 @@ class SemanticEncodingTests(TestCase):
     def test_legacy_precise_observations_remain_decodable(self):
         term = create_term(
             (
-                ENVIRONMENT_SCHEMA,
+                b"local",
                 encode_timestamp(datetime(2025, 7, 1, tzinfo=timezone.utc)),
                 struct.pack(">h", 2125),
                 struct.pack(">I", 101240),
