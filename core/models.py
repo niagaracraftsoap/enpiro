@@ -33,7 +33,13 @@ class SymbolManager(models.Manager):
         """Resolve an ordered batch of binary values to deduplicated Symbols."""
         blobs = _coerce_blob_sequence(values)
         unique_blobs = tuple(dict.fromkeys(blobs))
-        existing = self.in_bulk(unique_blobs, field_name="symbol")
+        def existing_by_blob():
+            return {
+                bytes(symbol.symbol): symbol
+                for symbol in self.filter(symbol__in=unique_blobs)
+            }
+
+        existing = existing_by_blob()
         missing = tuple(
             blob for blob in unique_blobs if blob not in existing
         )
@@ -45,7 +51,7 @@ class SymbolManager(models.Manager):
             )
             # Re-read after bulk creation because ignored inserts do not
             # reliably populate primary keys across database backends.
-            existing = self.in_bulk(unique_blobs, field_name="symbol")
+            existing = existing_by_blob()
 
         return (
             tuple(existing[blob] for blob in blobs),
