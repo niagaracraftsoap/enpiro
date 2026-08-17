@@ -132,7 +132,18 @@ The intended read path is:
        ↓
     API, dashboard, export, or telemetry
 
-The decoded domain value should not be persisted again merely to make it easier to query.
+The substrate should make the data queryable through its own structure. A decoded projection is not required merely to make queries convenient.
+
+A Symbol stores bytes, so the semantic layer must choose encodings deliberately:
+
+- Exact lookup can use the unique index on Symbol.symbol.
+- Ordered and range queries can use an order-preserving numeric encoding.
+- TermSymbol.order identifies which semantic position a Symbol occupies.
+- Substrate query helpers can join TermSymbol to Symbol and compare the encoded bytes directly.
+
+A binary value is not automatically a sortable number. If a field must support ordering, its encoding must preserve numeric order under the database's byte ordering. Unsigned big-endian encodings work for non-negative integers; signed values need an order-preserving transformation before encoding.
+
+This lets the substrate support equality, ordering, and range selection without storing decoded duplicates.
 
 ## Environmental observations
 
