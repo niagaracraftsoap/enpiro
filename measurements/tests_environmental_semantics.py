@@ -7,7 +7,6 @@ from core.models import Term, TermSymbol
 from .repository import environmental_history
 from .semantic import (
     create_term,
-    ENVIRONMENT_SCHEMA,
     ObservationValue,
     decode_environmental_term,
     encode_environmental_observation,
@@ -30,9 +29,22 @@ class EnvironmentalSemanticSubstrateTests(TestCase):
         self.assertEqual(TermSymbol.objects.filter(term=term).count(), 5)
         self.assertEqual(
             list(term.termsymbol_set.order_by("order").values_list("symbol__symbol", flat=True))[0],
-            ENVIRONMENT_SCHEMA,
+            b"local",
         )
         self.assertEqual(decode_environmental_term(term), self.observation)
+
+    def test_source_id_is_part_of_the_ordered_term(self):
+        observation = ObservationValue(
+            observed_at=self.observation.observed_at,
+            temperature_c=self.observation.temperature_c,
+            relative_humidity=self.observation.relative_humidity,
+            pressure_hpa=self.observation.pressure_hpa,
+            source_id="pico-01",
+        )
+        term = resolve_environmental_observation(observation)
+
+        self.assertEqual(decode_environmental_term(term).source_id, "pico-01")
+        self.assertNotEqual(term.pk, resolve_environmental_observation(self.observation).pk)
 
     def test_identical_environmental_observation_reuses_term(self):
         first = resolve_environmental_observation(self.observation)
