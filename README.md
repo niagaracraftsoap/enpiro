@@ -37,10 +37,9 @@ is made available to dashboards through the JSON API.
 ## Storage
 
 Observations are stored in SQLite using Enpiro's `Term`/`Symbol` substrate.
-Each observation is represented by one schema marker followed by four ordered
-binary symbols:
+Each observation is represented by five ordered binary symbols:
 
-1. The `enpiro.environment.v1` semantic schema marker.
+1. A source identifier such as `local` or `pico-01`.
 2. A timezone-aware timestamp encoded as signed 64-bit microseconds since the
    Unix epoch.
 3. Temperature encoded in tenths of a degree Celsius as a signed 16-bit
@@ -51,8 +50,13 @@ binary symbols:
    integer.
 
 Equal encoded values share the same `Symbol` record. Semantic query helpers
-select marked Terms and decode them into environmental observations for the
-rest of the application. No decoded observation index is persisted.
+validate the ordered shape and decode Terms into environmental observations for
+the rest of the application. No decoded observation index is persisted.
+
+Air-quality assessments are independent Terms containing a timestamp and an
+integer percentage from 0 through 100. They are not nullable fields on
+environmental observations and are not collected until that semantic profile
+is implemented.
 
 ## Web interface
 
