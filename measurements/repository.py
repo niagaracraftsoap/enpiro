@@ -17,13 +17,10 @@ def environmental_term_queryset(*, start=None, end=None):
     The schema marker and ordered TermSymbol relationships identify the
     semantic type. No decoded observation or secondary index is persisted.
     """
-    schema_symbol = Symbol.objects.filter(symbol=ENVIRONMENT_SCHEMA).first()
-    if schema_symbol is None:
-        return Term.objects.none()
-
+    schema_symbols = Symbol.objects.filter(symbol=ENVIRONMENT_SCHEMA).values("pk")
     matching_symbols = TermSymbol.objects.filter(
         order=0,
-        symbol_id=schema_symbol.pk,
+        symbol_id__in=schema_symbols,
     ).values("term_id")
     queryset = (
         Term.objects.filter(pk__in=matching_symbols)
@@ -75,10 +72,10 @@ def environmental_history(limit=48, *, start=None, end=None):
     return values
 
 
-async def environmental_history_iterator(*, start=None, end=None, chunk_size=1_000):
-    """Asynchronously yield substrate observations in bounded chunks."""
+def environmental_history_iterator(*, start=None, end=None, chunk_size=1_000):
+    """Yield substrate observations in bounded database chunks."""
     queryset = environmental_term_queryset(start=start, end=end)
-    async for term in queryset.aiterator(chunk_size=chunk_size):
+    for term in queryset.iterator(chunk_size=chunk_size):
         yield decode_environmental_term(term)
 
 
