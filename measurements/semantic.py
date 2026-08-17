@@ -11,6 +11,10 @@ from core.models import Symbol, Term, TermSymbol
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
+ENVIRONMENT_SCHEMA = b"enpiro.environment.v1"
+ENVIRONMENT_TERM_LENGTH = 5
+
+
 @dataclass(frozen=True)
 class ObservationValue:
     observed_at: datetime
@@ -26,6 +30,25 @@ class ObservationValue:
             "relative_humidity": self.relative_humidity,
             "pressure_hpa": self.pressure_hpa,
         }
+
+
+def encode_environmental_observation(value):
+    """Encode an environmental reading as an ordered substrate sequence."""
+    return (
+        ENVIRONMENT_SCHEMA,
+        encode_timestamp(value.observed_at),
+        encode_temperature(value.temperature_c),
+        encode_pressure(value.pressure_hpa),
+        encode_humidity(value.relative_humidity),
+    )
+
+
+def resolve_environmental_observation(value):
+    """Resolve an environmental reading to its substrate Term."""
+    from core.models import Term
+
+    return Term.objects.resolve_clear(encode_environmental_observation(value))
+
 
 def encode_timestamp(value):
     if value.tzinfo is None:
@@ -123,6 +146,22 @@ def create_quick_check(
             pressure_hpa=value.pressure_hpa,
         )
         return term
+
+
+def decode_environmental_term(term):
+    """Decode a Term with the environment.v1 semantic shape."""
+    atoms = ordered_bytes(term)
+    if len(atoms) != ENVIRONMENT_TERM_LENGTH:
+        raise ValueError("Term is not an environment.v1 observation")
+    if atoms[0] != ENVIRONMENT_SCHEMA:
+        raise ValueError("Term has an unknown environmental schema")
+
+    return ObservationValue(
+        observed_at=decode_timestamp(atoms[1]),
+        temperature_c=struct.unpack(">h", atoms[2])[0] / 10,
+        pressure_hpa=float(struct.unpack(">H", atoms[3])[0]),
+        relative_humidity=struct.unpack(">H", atoms[4])[0] / 10,
+    )
 
 
 def decode_quick_check(term):
