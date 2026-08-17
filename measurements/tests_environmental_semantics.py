@@ -6,6 +6,7 @@ from core.models import Term, TermSymbol
 
 from .repository import environmental_history_from_substrate
 from .semantic import (
+    create_term,
     ENVIRONMENT_SCHEMA,
     ObservationValue,
     decode_environmental_term,
@@ -41,23 +42,13 @@ class EnvironmentalSemanticSubstrateTests(TestCase):
         self.assertEqual(Term.objects.count(), 1)
 
     def test_substrate_query_excludes_unmarked_terms(self):
-        resolve_environmental_observation(self.observation)
-        other = resolve_environmental_observation(
-            ObservationValue(
-                observed_at=datetime(2026, 8, 17, 12, 31, tzinfo=timezone.utc),
-                temperature_c=22.4,
-                relative_humidity=51.2,
-                pressure_hpa=1013,
-            )
-        )
+        environmental_term = resolve_environmental_observation(self.observation)
+        create_term(encode_environmental_observation(self.observation)[1:])
 
         terms = list(environmental_history_from_substrate(limit=None))
 
-        self.assertEqual([value.observed_at for value in terms], [
-            self.observation.observed_at,
-            other and datetime(2026, 8, 17, 12, 31, tzinfo=timezone.utc),
-        ])
         self.assertEqual(
-            len(encode_environmental_observation(self.observation)),
-            5,
+            [value.observed_at for value in terms],
+            [self.observation.observed_at],
         )
+        self.assertEqual(terms[0], decode_environmental_term(environmental_term))
