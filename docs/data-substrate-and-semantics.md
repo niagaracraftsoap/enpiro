@@ -149,7 +149,7 @@ This lets the substrate support equality, ordering, and range selection without 
 
 The initial environmental semantic profile represents:
 
-    [timestamp, temperature, pressure, relative humidity]
+    [source identifier, timestamp, temperature, pressure, relative humidity]
 
 The BME690 gas-resistance measurement is intentionally outside the initial profile.
 
@@ -172,10 +172,19 @@ Query optimizations should improve retrieval of the substrate itself. They shoul
 ## Current transition
 
 The former QuickCheck and QuickCheckIndex implementation represented an
-earlier projection-based approach. The substrate-only migration adds the
-`enpiro.environment.v1` marker to existing four-symbol environmental Terms,
-removes the decoded index table and proxy model, and keeps decoding in
-semantic functions and in-memory values.
+earlier projection-based approach. The substrate-only migration converts
+existing four-symbol environmental Terms into source-aware five-symbol Terms,
+using `local` for readings made by the Pi Zero. It removes the decoded index
+table and proxy model, and keeps decoding in semantic functions and in-memory
+values.
+
+Air-quality assessments are a separate semantic shape:
+
+    [timestamp, percentage]
+
+The percentage is an integer from 0 through 100. It is not a nullable member of
+the environmental shape because an assessment is a separate event that may not
+occur for every environmental reading.
 
 ## Design principle
 
