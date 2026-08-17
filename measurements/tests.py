@@ -186,11 +186,16 @@ class DashboardTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIsInstance(response, StreamingHttpResponse)
-        self.assertTrue(response.is_async)
+        self.assertFalse(response.is_async)
         self.assertEqual(
             response["Content-Disposition"],
             'attachment; filename="warehouse-environment-history.csv"',
         )
+
+        csv_body = b"".join(response.streaming_content).decode()
+        self.assertIn("recorded_at,temperature_c,relative_humidity,pressure_hpa", csv_body)
+        self.assertIn("2026-07-29T12:00:00+00:00,20.5,42.0,1012.0", csv_body)
+        self.assertIn("2026-07-30T12:00:00+00:00,21.5,43.0,1012.0", csv_body)
 
     def test_history_without_explicit_range_is_limited_to_recent_year(self):
         now = datetime.now(timezone.utc)
@@ -238,8 +243,9 @@ class DashboardTests(TestCase):
                 1010 + day,
             )
 
-        # One schema lookup, one Term query, and one prefetched relation query.
-        with self.assertNumQueries(3):
+        # One Term query and one prefetched relation query; schema resolution
+        # remains lazy inside the same substrate query.
+        with self.assertNumQueries(2):
             values = environmental_history(
                 limit=None,
                 start=datetime(2026, 7, 4, tzinfo=timezone.utc),
