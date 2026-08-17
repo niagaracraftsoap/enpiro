@@ -6,8 +6,8 @@ from django.core.management import CommandError, call_command
 from django.test import TestCase
 
 from core.models import Term
-from measurements.models import QuickCheck
-from measurements.semantic import create_quick_check
+from measurements.repository import environmental_history
+from measurements.semantic import ObservationValue, resolve_environmental_observation
 
 
 class ImportReadingsTests(TestCase):
@@ -36,7 +36,7 @@ class ImportReadingsTests(TestCase):
         with self.make_export() as source:
             call_command("import_readings_csv", source.name, verbosity=0)
 
-        value = QuickCheck.objects.get().value
+        value = environmental_history(limit=None)[0]
         self.assertEqual(value.observed_at, datetime(2026, 7, 30, 18, tzinfo=timezone.utc))
         self.assertEqual(value.temperature_c, 21.3)
         self.assertEqual(value.relative_humidity, 48.0)
@@ -44,11 +44,13 @@ class ImportReadingsTests(TestCase):
 
     def test_import_refuses_a_nonempty_dataset(self):
         """Prevent an import from silently mixing with or duplicating stored history."""
-        create_quick_check(
-            datetime(2026, 7, 30, 18, tzinfo=timezone.utc),
-            21,
-            48,
-            1012,
+        resolve_environmental_observation(
+            ObservationValue(
+                observed_at=datetime(2026, 7, 30, 18, tzinfo=timezone.utc),
+                temperature_c=21,
+                relative_humidity=48,
+                pressure_hpa=1012,
+            )
         )
         with self.make_export() as source:
             with self.assertRaisesMessage(CommandError, "must be empty"):

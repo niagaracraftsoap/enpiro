@@ -37,20 +37,22 @@ is made available to dashboards through the JSON API.
 ## Storage
 
 Observations are stored in SQLite using Enpiro's `Term`/`Symbol` substrate.
-Each observation is represented by four ordered binary symbols:
+Each observation is represented by one schema marker followed by four ordered
+binary symbols:
 
-1. A timezone-aware timestamp encoded as signed 64-bit microseconds since the
+1. The `enpiro.environment.v1` semantic schema marker.
+2. A timezone-aware timestamp encoded as signed 64-bit microseconds since the
    Unix epoch.
-2. Temperature encoded in tenths of a degree Celsius as a signed 16-bit
+3. Temperature encoded in tenths of a degree Celsius as a signed 16-bit
    integer.
-3. Atmospheric pressure encoded in whole hectopascals as an unsigned 16-bit
+4. Atmospheric pressure encoded in whole hectopascals as an unsigned 16-bit
    integer.
-4. Relative humidity encoded in tenths of a percent as an unsigned 16-bit
+5. Relative humidity encoded in tenths of a percent as an unsigned 16-bit
    integer.
 
-Equal encoded values share the same `Symbol` record. A `QuickCheck` proxy model
-selects four-symbol terms and decodes them into environmental observations for
-the rest of the application.
+Equal encoded values share the same `Symbol` record. Semantic query helpers
+select marked Terms and decode them into environmental observations for the
+rest of the application. No decoded observation index is persisted.
 
 ## Web interface
 

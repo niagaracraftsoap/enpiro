@@ -3,21 +3,25 @@ from django.utils import timezone
 
 from core.models import Symbol, Term
 
-from .semantic import create_quick_check
+from .semantic import resolve_environmental_observation
 
 
-def save_quick_check(
+def save_environmental_observation(
     *,
     observed_at=None,
     temperature_c,
     relative_humidity,
     pressure_hpa,
 ):
-    term = create_quick_check(
-        observed_at or timezone.now(),
-        temperature_c,
-        relative_humidity,
-        pressure_hpa,
+    from .semantic import ObservationValue
+
+    term = resolve_environmental_observation(
+        ObservationValue(
+            observed_at=observed_at or timezone.now(),
+            temperature_c=temperature_c,
+            relative_humidity=relative_humidity,
+            pressure_hpa=pressure_hpa,
+        )
     )
     return term
 

@@ -9,30 +9,42 @@ from django.urls import reverse
 from core.models import Symbol, Term
 
 from .checks import check_condition_thresholds
-from .models import QuickCheck
 from .semantic import (
     create_term,
-    create_quick_check,
-    decode_quick_check,
+    decode_environmental_term,
+    ENVIRONMENT_SCHEMA,
     encode_humidity,
     encode_pressure,
     encode_temperature,
     encode_timestamp,
+    ObservationValue,
+    resolve_environmental_observation,
 )
 from .repository import environmental_history
-from .services import save_quick_check
+from .services import save_environmental_observation
+
+
+def resolve_reading(observed_at, temperature_c, relative_humidity, pressure_hpa):
+    return resolve_environmental_observation(
+        ObservationValue(
+            observed_at=observed_at,
+            temperature_c=temperature_c,
+            relative_humidity=relative_humidity,
+            pressure_hpa=pressure_hpa,
+        )
+    )
 
 
 class SemanticEncodingTests(TestCase):
     def test_equal_values_share_symbols_across_terms(self):
         """Protect value deduplication without conflating unequal observations."""
-        first = create_quick_check(
+        first = resolve_reading(
             datetime(2025, 7, 1, tzinfo=timezone.utc),
             21.25,
             48.0,
             1012.4,
         )
-        second = create_quick_check(
+        second = resolve_reading(
             datetime(2025, 7, 1, 0, 10, tzinfo=timezone.utc),
             21.25,
             50.0,
@@ -44,11 +56,11 @@ class SemanticEncodingTests(TestCase):
         second_symbols = list(
             second.termsymbol_set.order_by("order").values_list("symbol_id", flat=True)
         )
-        self.assertEqual(first_symbols[1], second_symbols[1])
         self.assertEqual(first_symbols[2], second_symbols[2])
-        self.assertNotEqual(first_symbols[3], second_symbols[3])
-        self.assertNotEqual(first_symbols[0], second_symbols[0])
-        decoded = QuickCheck.objects.get(pk=first.pk).value
+        self.assertEqual(first_symbols[3], second_symbols[3])
+        self.assertNotEqual(first_symbols[4], second_symbols[4])
+        self.assertNotEqual(first_symbols[1], second_symbols[1])
+        decoded = decode_environmental_term(first)
         self.assertEqual(decoded.temperature_c, 21.3)
         self.assertEqual(decoded.pressure_hpa, 1012.0)
         self.assertEqual(decoded.relative_humidity, 48.0)
@@ -65,7 +77,7 @@ class SemanticEncodingTests(TestCase):
     def test_repeated_values_create_only_one_symbol(self):
         """Ensure repeated observations benefit from substrate-level deduplication."""
         for minute in range(3):
-            create_quick_check(
+            resolve_reading(
                 datetime(2025, 7, 1, 0, minute, tzinfo=timezone.utc),
                 21.25,
                 48.0,
@@ -76,6 +88,7 @@ class SemanticEncodingTests(TestCase):
     def test_legacy_precise_observations_remain_decodable(self):
         term = create_term(
             (
+                ENVIRONMENT_SCHEMA,
                 encode_timestamp(datetime(2025, 7, 1, tzinfo=timezone.utc)),
                 struct.pack(">h", 2125),
                 struct.pack(">I", 101240),
@@ -83,7 +96,7 @@ class SemanticEncodingTests(TestCase):
             )
         )
 
-        decoded = decode_quick_check(term)
+        decoded = decode_environmental_term(term)
 
         self.assertEqual(decoded.temperature_c, 21.25)
         self.assertEqual(decoded.pressure_hpa, 1012.4)
@@ -103,7 +116,7 @@ class DashboardTests(TestCase):
 
     def test_dashboard_and_latest_api_show_environment(self):
         """Keep the initial page and latest API aligned with the stored observation."""
-        save_quick_check(
+        save_environmental_observation(
             temperature_c=20.5,
             relative_humidity=42.0,
             pressure_hpa=1012.3,
@@ -132,13 +145,13 @@ class DashboardTests(TestCase):
 
     def test_history_filters_metric_and_exports_csv(self):
         """Protect date filtering and the complete, restorable CSV export contract."""
-        create_quick_check(
+        resolve_reading(
             datetime(2026, 7, 29, 12, tzinfo=timezone.utc),
             20.5,
             42,
             1012.3,
         )
-        create_quick_check(
+        resolve_reading(
             datetime(2026, 7, 30, 12, tzinfo=timezone.utc),
             21.5,
             43,
@@ -181,13 +194,13 @@ class DashboardTests(TestCase):
 
     def test_history_without_explicit_range_is_limited_to_recent_year(self):
         now = datetime.now(timezone.utc)
-        create_quick_check(
+        resolve_reading(
             now - timedelta(days=settings.INTERFACE_HISTORY_RETENTION_DAYS + 14),
             19.5,
             41,
             1008,
         )
-        create_quick_check(
+        resolve_reading(
             now - timedelta(days=30),
             20.5,
             42,
@@ -218,14 +231,15 @@ class DashboardTests(TestCase):
 
     def test_history_filters_in_database_and_batches_symbol_loading(self):
         for day in range(1, 6):
-            create_quick_check(
+            resolve_reading(
                 datetime(2026, 7, day, 12, tzinfo=timezone.utc),
                 20 + day,
                 40 + day,
                 1010 + day,
             )
 
-        with self.assertNumQueries(1):
+        # One schema lookup, one Term query, and one prefetched relation query.
+        with self.assertNumQueries(3):
             values = environmental_history(
                 limit=None,
                 start=datetime(2026, 7, 4, tzinfo=timezone.utc),
@@ -259,7 +273,7 @@ class DashboardTests(TestCase):
 
     def test_reset_requires_post_and_both_confirmations(self):
         """Prevent recorded history from being erased by an incomplete reset request."""
-        save_quick_check(
+        save_environmental_observation(
             temperature_c=20.5,
             relative_humidity=42.0,
             pressure_hpa=1012.3,
@@ -303,7 +317,7 @@ class DashboardTests(TestCase):
 
     def test_reset_deletes_terms_and_orphaned_symbols(self):
         """Verify a confirmed reset clears observations and unreferenced storage."""
-        save_quick_check(
+        save_environmental_observation(
             temperature_c=20.5,
             relative_humidity=42.0,
             pressure_hpa=1012.3,
@@ -349,5 +363,3 @@ class ConfigurationTests(SimpleTestCase):
         """Catch inverted condition bands during Django's deployment checks."""
         errors = check_condition_thresholds(None)
         self.assertEqual([error.id for error in errors], ["measurements.E001"])
-
-

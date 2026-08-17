@@ -4,7 +4,7 @@ from django.test import TestCase
 
 from core.models import Term, TermSymbol
 
-from .repository import environmental_history_from_substrate
+from .repository import environmental_history
 from .semantic import (
     create_term,
     ENVIRONMENT_SCHEMA,
@@ -45,7 +45,7 @@ class EnvironmentalSemanticSubstrateTests(TestCase):
         environmental_term = resolve_environmental_observation(self.observation)
         create_term(encode_environmental_observation(self.observation)[1:])
 
-        terms = list(environmental_history_from_substrate(limit=None))
+        terms = list(environmental_history(limit=None))
 
         self.assertEqual(
             [value.observed_at for value in terms],

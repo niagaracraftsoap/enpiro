@@ -171,9 +171,11 @@ Query optimizations should improve retrieval of the substrate itself. They shoul
 
 ## Current transition
 
-The existing QuickCheck and QuickCheckIndex implementation represents an earlier projection-based approach. QuickCheckIndex stores decoded environmental fields separately from the substrate.
-
-The intended direction is to make the substrate the sole persisted data representation and replace semantic models or decoded indexes with semantic functions and in-memory values. Existing data must be migrated carefully before removing any transitional projection.
+The former QuickCheck and QuickCheckIndex implementation represented an
+earlier projection-based approach. The substrate-only migration adds the
+`enpiro.environment.v1` marker to existing four-symbol environmental Terms,
+removes the decoded index table and proxy model, and keeps decoding in
+semantic functions and in-memory values.
 
 ## Design principle
 

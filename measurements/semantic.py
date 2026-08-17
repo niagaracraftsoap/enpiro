@@ -45,8 +45,6 @@ def encode_environmental_observation(value):
 
 def resolve_environmental_observation(value):
     """Resolve an environmental reading to its substrate Term."""
-    from core.models import Term
-
     return Term.objects.resolve_clear(encode_environmental_observation(value))
 
 
@@ -117,67 +115,27 @@ def create_term(atoms, symbol_cache=None):
     return term
 
 
-def create_quick_check(
-    observed_at,
-    temperature_c,
-    relative_humidity,
-    pressure_hpa,
-    *,
-    symbol_cache=None,
-):
-    from .models import QuickCheckIndex
-
-    with transaction.atomic():
-        term = create_term(
-            (
-                encode_timestamp(observed_at),
-                encode_temperature(temperature_c),
-                encode_pressure(pressure_hpa),
-                encode_humidity(relative_humidity),
-            ),
-            symbol_cache,
-        )
-        value = decode_quick_check(term)
-        QuickCheckIndex.objects.create(
-            term=term,
-            observed_at=value.observed_at,
-            temperature_c=value.temperature_c,
-            relative_humidity=value.relative_humidity,
-            pressure_hpa=value.pressure_hpa,
-        )
-        return term
-
-
 def decode_environmental_term(term):
-    """Decode a Term with the environment.v1 semantic shape."""
+    """Decode a current or migrated environmental Term."""
     atoms = ordered_bytes(term)
     if len(atoms) != ENVIRONMENT_TERM_LENGTH:
         raise ValueError("Term is not an environment.v1 observation")
     if atoms[0] != ENVIRONMENT_SCHEMA:
         raise ValueError("Term has an unknown environmental schema")
 
+    temperature = struct.unpack(">h", atoms[2])[0]
+    if len(atoms[3]) == 4:
+        # Terms written before the canonical compact profile used hundredths.
+        pressure_hpa = struct.unpack(">I", atoms[3])[0] / 100
+        relative_humidity = struct.unpack(">H", atoms[4])[0] / 100
+        temperature_c = temperature / 100
+    else:
+        temperature_c = temperature / 10
+        pressure_hpa = float(struct.unpack(">H", atoms[3])[0])
+        relative_humidity = struct.unpack(">H", atoms[4])[0] / 10
+
     return ObservationValue(
         observed_at=decode_timestamp(atoms[1]),
-        temperature_c=struct.unpack(">h", atoms[2])[0] / 10,
-        pressure_hpa=float(struct.unpack(">H", atoms[3])[0]),
-        relative_humidity=struct.unpack(">H", atoms[4])[0] / 10,
-    )
-
-
-def decode_quick_check(term):
-    timestamp, temperature, pressure, humidity = ordered_bytes(term)
-    # Preserve observations written by the older high-precision local branch
-    # while all new readings use the compact production representation.
-    if len(pressure) == 4:
-        temperature_c = struct.unpack(">h", temperature)[0] / 100
-        relative_humidity = struct.unpack(">H", humidity)[0] / 100
-        pressure_hpa = struct.unpack(">I", pressure)[0] / 100
-    else:
-        temperature_c = struct.unpack(">h", temperature)[0] / 10
-        relative_humidity = struct.unpack(">H", humidity)[0] / 10
-        pressure_hpa = float(struct.unpack(">H", pressure)[0])
-    return ObservationValue(
-        observed_at=decode_timestamp(timestamp),
         temperature_c=temperature_c,
         relative_humidity=relative_humidity,
         pressure_hpa=pressure_hpa,

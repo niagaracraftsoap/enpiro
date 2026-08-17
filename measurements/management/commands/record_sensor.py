@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from measurements.bme690_sensor import PimoroniBME690
-from measurements.services import save_quick_check
+from measurements.services import save_environmental_observation
 
 
 class Command(BaseCommand):
@@ -39,7 +39,7 @@ class Command(BaseCommand):
                 sample_interval=options["sample_interval"],
                 outlier_threshold=options["outlier_threshold"],
             )
-            term = save_quick_check(
+            term = save_environmental_observation(
                 observed_at=average.observed_at,
                 temperature_c=average.temperature_c,
                 relative_humidity=average.relative_humidity,

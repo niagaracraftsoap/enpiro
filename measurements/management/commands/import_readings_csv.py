@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from core.models import Term
-from measurements.semantic import create_quick_check
+from measurements.semantic import ObservationValue, resolve_environmental_observation
 
 
 FIELDNAMES = [
@@ -27,7 +27,6 @@ class Command(BaseCommand):
         if Term.objects.exists():
             raise CommandError("The dataset must be empty before importing readings.")
 
-        symbol_cache = {}
         imported = 0
         try:
             with open(options["path"], newline="", encoding="utf-8") as source:
@@ -36,12 +35,13 @@ class Command(BaseCommand):
                     raise CommandError("The CSV header is not a complete Enpiro export.")
                 for line_number, row in enumerate(reader, start=2):
                     try:
-                        create_quick_check(
-                            datetime.fromisoformat(row["recorded_at"]),
-                            float(row["temperature_c"]),
-                            float(row["relative_humidity"]),
-                            float(row["pressure_hpa"]),
-                            symbol_cache=symbol_cache,
+                        resolve_environmental_observation(
+                            ObservationValue(
+                                observed_at=datetime.fromisoformat(row["recorded_at"]),
+                                temperature_c=float(row["temperature_c"]),
+                                relative_humidity=float(row["relative_humidity"]),
+                                pressure_hpa=float(row["pressure_hpa"]),
+                            )
                         )
                     except (TypeError, ValueError) as error:
                         raise CommandError(
