@@ -11,7 +11,7 @@ from core.models import Symbol, Term, TermSymbol
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-ENVIRONMENT_SCHEMA = b"enpiro.environment.v1"
+LOCAL_SOURCE_ID = "local"
 ENVIRONMENT_TERM_LENGTH = 5
 
 
@@ -21,10 +21,12 @@ class ObservationValue:
     temperature_c: float
     relative_humidity: float
     pressure_hpa: float
+    source_id: str = LOCAL_SOURCE_ID
 
     def as_dict(self):
         return {
             "kind": "environment",
+            "source_id": self.source_id,
             "recorded_at": self.observed_at.isoformat(),
             "temperature_c": self.temperature_c,
             "relative_humidity": self.relative_humidity,
@@ -32,10 +34,19 @@ class ObservationValue:
         }
 
 
+def encode_source_id(value):
+    if not isinstance(value, str) or not value:
+        raise ValueError("Source ID must be a non-empty string")
+    encoded = value.encode("utf-8")
+    if len(encoded) > 65_535:
+        raise ValueError("Source ID is too long")
+    return encoded
+
+
 def encode_environmental_observation(value):
     """Encode an environmental reading as an ordered substrate sequence."""
     return (
-        ENVIRONMENT_SCHEMA,
+        encode_source_id(value.source_id),
         encode_timestamp(value.observed_at),
         encode_temperature(value.temperature_c),
         encode_pressure(value.pressure_hpa),
@@ -116,13 +127,18 @@ def create_term(atoms, symbol_cache=None):
 
 
 def decode_environmental_term(term):
-    """Decode a current or migrated environmental Term."""
+    """Decode a source-aware environmental Term."""
     atoms = ordered_bytes(term)
     if len(atoms) != ENVIRONMENT_TERM_LENGTH:
-        raise ValueError("Term is not an environment.v1 observation")
-    if atoms[0] != ENVIRONMENT_SCHEMA:
-        raise ValueError("Term has an unknown environmental schema")
+        raise ValueError("Term is not an environmental observation")
 
+    try:
+        source_id = atoms[0].decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Term has an invalid source ID") from error
+
+    if len(atoms[1]) != 8 or len(atoms[2]) != 2 or len(atoms[4]) != 2:
+        raise ValueError("Term has an invalid environmental shape")
     temperature = struct.unpack(">h", atoms[2])[0]
     if len(atoms[3]) == 4:
         # Terms written before the canonical compact profile used hundredths.
@@ -139,4 +155,5 @@ def decode_environmental_term(term):
         temperature_c=temperature_c,
         relative_humidity=relative_humidity,
         pressure_hpa=pressure_hpa,
+        source_id=source_id,
     )
