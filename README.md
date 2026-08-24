@@ -86,6 +86,12 @@ The dashboard provides:
   device restarts, and temporary connectivity gaps.
 - CSV downloads for one or more measurements and a selected time range.
 
+The initial dashboard GET retrieves only the latest observation needed for the
+current-condition cards. The browser then requests the selected graph range
+from the history API, which uses the encoded observation timestamp to select
+substrate candidates. Live latest-reading polling begins on its regular
+30-second interval rather than duplicating the initial page request.
+
 The browser cache is a read-through copy, not the source of truth. Cached
 observations render immediately, then the selected range is reconciled with
 the server on page load, periodic polling, network recovery, and return

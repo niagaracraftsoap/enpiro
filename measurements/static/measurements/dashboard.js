@@ -822,7 +822,6 @@ async function pollLatest() {
 
 function startPolling() {
   if (pollingTimer) return;
-  pollLatest();
   pollingTimer = window.setInterval(pollLatest, pollIntervalMs);
 }
 

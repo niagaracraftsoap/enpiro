@@ -138,13 +138,16 @@ def _history_response(request, *, csv_export=False):
 
 
 def dashboard(request):
-    environment = environmental_history()
+    latest = latest_environmental_observation()
     return render(
         request,
         "measurements/dashboard.html",
         {
-            "latest_environment": environment[-1] if environment else None,
-            "reading_history": [value.as_dict() for value in environment],
+            "latest_environment": latest,
+            # History is loaded by the client through the range API. Keeping
+            # it out of the initial HTML prevents the page GET from decoding
+            # the complete substrate history just to render 48 points.
+            "reading_history": [],
             "condition_thresholds": settings.WAREHOUSE_CONDITION_THRESHOLDS,
         },
     )

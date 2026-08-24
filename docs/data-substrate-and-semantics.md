@@ -207,6 +207,13 @@ selection.
 No decoded projection or additional QuickSync model is needed for this
 optimization.
 
+The web request path follows the same separation. The initial dashboard page
+loads only the latest observation for the current-condition cards. The client
+then requests the selected graph range through the history API, and scheduled
+latest-reading polling supplies subsequent live updates. The initial page GET
+does not embed a history payload or decode a complete history before sending
+the first response.
+
 ## Current transition
 
 The former QuickCheck and QuickCheckIndex implementation represented an

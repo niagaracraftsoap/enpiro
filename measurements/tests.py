@@ -126,8 +126,10 @@ class DashboardTests(TestCase):
         self.assertEqual(response.json()["environment"]["temperature_c"], 20.5)
         self.assertNotIn("air_quality", response.json())
 
-        dashboard = self.client.get(reverse("measurements:dashboard"))
+        with self.assertNumQueries(2):
+            dashboard = self.client.get(reverse("measurements:dashboard"))
         self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.context["reading_history"], [])
         self.assertEqual(dashboard.content.count(b'class="condition-indicator"'), 2)
         self.assertContains(dashboard, 'id="condition-thresholds"')
         self.assertEqual(
