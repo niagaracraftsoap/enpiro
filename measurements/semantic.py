@@ -2,6 +2,7 @@ import struct
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from functools import lru_cache
 
 from django.db import transaction
 
@@ -76,6 +77,28 @@ def decode_timestamp(value):
     return EPOCH + timedelta(microseconds=microseconds)
 
 
+@lru_cache(maxsize=4096)
+def _decode_source_id(value):
+    return value.decode("utf-8")
+
+
+@lru_cache(maxsize=4096)
+def _decode_temperature_units(value):
+    return struct.unpack(">h", value)[0]
+
+
+@lru_cache(maxsize=4096)
+def _decode_pressure_units(value):
+    if len(value) == 4:
+        return struct.unpack(">I", value)[0]
+    return struct.unpack(">H", value)[0]
+
+
+@lru_cache(maxsize=4096)
+def _decode_humidity_units(value):
+    return struct.unpack(">H", value)[0]
+
+
 def encode_temperature(value):
     encoded = int(
         (Decimal(str(value)) * 10).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
@@ -133,22 +156,22 @@ def decode_environmental_term(term):
         raise ValueError("Term is not an environmental observation")
 
     try:
-        source_id = atoms[0].decode("utf-8")
+        source_id = _decode_source_id(atoms[0])
     except UnicodeDecodeError as error:
         raise ValueError("Term has an invalid source ID") from error
 
     if len(atoms[1]) != 8 or len(atoms[2]) != 2 or len(atoms[4]) != 2:
         raise ValueError("Term has an invalid environmental shape")
-    temperature = struct.unpack(">h", atoms[2])[0]
+    temperature = _decode_temperature_units(atoms[2])
     if len(atoms[3]) == 4:
         # Terms written before the canonical compact profile used hundredths.
-        pressure_hpa = struct.unpack(">I", atoms[3])[0] / 100
-        relative_humidity = struct.unpack(">H", atoms[4])[0] / 100
+        pressure_hpa = _decode_pressure_units(atoms[3]) / 100
+        relative_humidity = _decode_humidity_units(atoms[4]) / 100
         temperature_c = temperature / 100
     else:
         temperature_c = temperature / 10
-        pressure_hpa = float(struct.unpack(">H", atoms[3])[0])
-        relative_humidity = struct.unpack(">H", atoms[4])[0] / 10
+        pressure_hpa = float(_decode_pressure_units(atoms[3]))
+        relative_humidity = _decode_humidity_units(atoms[4]) / 10
 
     return ObservationValue(
         observed_at=decode_timestamp(atoms[1]),

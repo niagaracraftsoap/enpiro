@@ -61,6 +61,12 @@ single latest reading. A persistence-time `created_at` field is not required:
 the measurement timestamp remains authoritative for imported, delayed, or
 out-of-order readings.
 
+Semantic decoding also uses bounded process-local LRU caches keyed by the
+immutable byte values of repeated source, temperature, pressure, and humidity
+Symbols. This lets the tight range of recurring sensor values benefit from
+deduplication during reads as well as storage. Observation timestamps are
+normally unique and are decoded directly.
+
 Air-quality assessments are independent Terms containing a timestamp and an
 integer percentage from 0 through 100. They are not nullable fields on
 environmental observations and are not collected until that semantic profile

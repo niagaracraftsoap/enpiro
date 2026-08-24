@@ -207,6 +207,14 @@ selection.
 No decoded projection or additional QuickSync model is needed for this
 optimization.
 
+Repeated Symbol values are also reused at the semantic decoding boundary.
+Bounded process-local LRU caches use immutable Symbol byte values as keys for
+source identifiers and quantized measurement values. This is safe because
+canonical Symbol values are immutable. Timestamp blobs are normally unique,
+so they are decoded directly rather than occupying cache entries. The cache
+reduces repeated unpacking and conversion work; the timestamp-first query
+path remains responsible for reducing database candidate and row retrieval.
+
 The web request path follows the same separation. The initial dashboard page
 loads only the latest observation for the current-condition cards. The client
 then requests the selected graph range through the history API, and scheduled

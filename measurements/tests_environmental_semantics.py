@@ -11,6 +11,10 @@ from .semantic import (
     decode_environmental_term,
     encode_environmental_observation,
     resolve_environmental_observation,
+    _decode_humidity_units,
+    _decode_pressure_units,
+    _decode_source_id,
+    _decode_temperature_units,
 )
 
 
@@ -52,6 +56,39 @@ class EnvironmentalSemanticSubstrateTests(TestCase):
 
         self.assertEqual(first.pk, second.pk)
         self.assertEqual(Term.objects.count(), 1)
+
+    def test_repeated_symbol_values_hit_semantic_decode_caches(self):
+        for decoder in (
+            _decode_source_id,
+            _decode_temperature_units,
+            _decode_pressure_units,
+            _decode_humidity_units,
+        ):
+            decoder.cache_clear()
+
+        first = resolve_environmental_observation(self.observation)
+        second = resolve_environmental_observation(
+            ObservationValue(
+                observed_at=datetime(2026, 8, 17, 12, 31, tzinfo=timezone.utc),
+                temperature_c=self.observation.temperature_c,
+                relative_humidity=self.observation.relative_humidity,
+                pressure_hpa=self.observation.pressure_hpa,
+            )
+        )
+        decode_environmental_term(first)
+        before = {
+            decoder: decoder.cache_info().hits
+            for decoder in (
+                _decode_source_id,
+                _decode_temperature_units,
+                _decode_pressure_units,
+                _decode_humidity_units,
+            )
+        }
+        decode_environmental_term(second)
+
+        for decoder, hits in before.items():
+            self.assertGreater(decoder.cache_info().hits, hits)
 
     def test_substrate_query_excludes_unmarked_terms(self):
         environmental_term = resolve_environmental_observation(self.observation)
