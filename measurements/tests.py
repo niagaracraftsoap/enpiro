@@ -19,7 +19,7 @@ from .semantic import (
     ObservationValue,
     resolve_environmental_observation,
 )
-from .repository import environmental_history
+from .repository import environmental_history, latest_environmental_observation
 from .services import save_environmental_observation
 
 
@@ -252,6 +252,26 @@ class DashboardTests(TestCase):
             )
 
         self.assertEqual([value.temperature_c for value in values], [24.0, 25.0])
+
+    def test_latest_observation_uses_descending_timestamp_candidate(self):
+        resolve_reading(
+            datetime(2026, 7, 30, 12, tzinfo=timezone.utc),
+            20,
+            40,
+            1010,
+        )
+        resolve_reading(
+            datetime(2026, 7, 30, 13, tzinfo=timezone.utc),
+            21,
+            41,
+            1011,
+        )
+
+        with self.assertNumQueries(2):
+            value = latest_environmental_observation()
+
+        self.assertEqual(value.observed_at, datetime(2026, 7, 30, 13, tzinfo=timezone.utc))
+        self.assertEqual(value.temperature_c, 21.0)
 
     def test_history_rejects_invalid_metric_range_and_csv_selection(self):
         """Reject unsupported fields and ranges instead of returning misleading data."""

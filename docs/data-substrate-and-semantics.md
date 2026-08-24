@@ -169,6 +169,44 @@ Substrate queries should be implemented as reusable query helpers or querysets t
 
 Query optimizations should improve retrieval of the substrate itself. They should not create a second persisted copy of decoded observations.
 
+### Timestamp-first retrieval
+
+Environmental terms already contain their own ordering key. The timestamp is
+stored as the order-1 Symbol value in the environmental term:
+
+    order 0 → source identifier
+    order 1 → observed timestamp
+    order 2 → temperature
+    order 3 → pressure
+    order 4 → relative humidity
+
+The timestamp uses a fixed-width order-preserving encoding for the dates used
+by Enpiro. Therefore, the `TermSymbol` rows at `order=1` can be used as the
+substrate's candidate and sorting table. Retrieval should begin there, apply
+timestamp bounds or descending order, and only then load and decode the
+corresponding Terms.
+
+In particular, a latest-reading request should be a descending timestamp
+lookup with a small validation window, followed by one ordered-symbol
+prefetch. It should not reconstruct the complete environmental history.
+
+The encoded observation timestamp is deliberately different from persistence
+metadata such as a hypothetical `Term.created_at` or `Symbol.created_at`:
+
+- the observation timestamp represents when the environmental condition was
+  measured;
+- a Term persistence timestamp would represent when data was inserted;
+- a Symbol persistence timestamp would represent when a deduplicated value was
+  first seen, not when a particular observation used it.
+
+Imports, delayed uploads, and out-of-order readings make persistence time an
+unsafe substitute for measurement time. The semantic timestamp remains the
+authoritative key for history, range filtering, exports, and latest-reading
+selection.
+
+No decoded projection or additional QuickSync model is needed for this
+optimization.
+
 ## Current transition
 
 The former QuickCheck and QuickCheckIndex implementation represented an

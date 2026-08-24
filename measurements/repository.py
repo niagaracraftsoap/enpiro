@@ -1,9 +1,8 @@
-from django.db.models import Count, OuterRef, Prefetch, Subquery
+from django.db.models import OuterRef, Prefetch, Subquery
 
 from core.models import Term, TermSymbol
 
 from .semantic import (
-    ENVIRONMENT_TERM_LENGTH,
     ObservationValue,
     decode_environmental_term,
     encode_timestamp,
@@ -16,10 +15,18 @@ def environmental_term_queryset(*, start=None, end=None):
     The schema marker and ordered TermSymbol relationships identify the
     semantic type. No decoded observation or secondary index is persisted.
     """
+    timestamp_terms = TermSymbol.objects.filter(order=1)
+    if start is not None:
+        timestamp_terms = timestamp_terms.filter(
+            symbol__symbol__gte=encode_timestamp(start),
+        )
+    if end is not None:
+        timestamp_terms = timestamp_terms.filter(
+            symbol__symbol__lte=encode_timestamp(end),
+        )
+
     queryset = (
-        Term.objects.all()
-        .annotate(_symbol_count=Count("termsymbol"))
-        .filter(_symbol_count=ENVIRONMENT_TERM_LENGTH)
+        Term.objects.filter(pk__in=timestamp_terms.values("term_id"))
         .prefetch_related(
             Prefetch(
                 "termsymbol_set",
@@ -28,19 +35,6 @@ def environmental_term_queryset(*, start=None, end=None):
             )
         )
     )
-
-    if start is not None:
-        timestamp_terms = TermSymbol.objects.filter(
-            order=1,
-            symbol__symbol__gte=encode_timestamp(start),
-        ).values("term_id")
-        queryset = queryset.filter(pk__in=timestamp_terms)
-    if end is not None:
-        timestamp_terms = TermSymbol.objects.filter(
-            order=1,
-            symbol__symbol__lte=encode_timestamp(end),
-        ).values("term_id")
-        queryset = queryset.filter(pk__in=timestamp_terms)
 
     timestamp_blob = TermSymbol.objects.filter(
         term_id=OuterRef("pk"),
@@ -80,5 +74,25 @@ def environmental_history_iterator(*, start=None, end=None, chunk_size=1_000):
 
 
 def latest_environmental_observation():
-    values = environmental_history(limit=1)
-    return values[0] if values else None
+    timestamp_terms = (
+        TermSymbol.objects.filter(order=1)
+        .select_related("term")
+        .prefetch_related(
+            Prefetch(
+                "term__termsymbol_set",
+                queryset=TermSymbol.objects.select_related("symbol").order_by("order"),
+                to_attr="_ordered_symbols",
+            )
+        )
+        .order_by("-symbol__symbol", "-term_id")
+    )
+    # The normal case is one valid environmental term at the top. Keep a
+    # small validation window so an unrelated or malformed term does not
+    # prevent a usable environmental reading from being returned.
+    for timestamp_relation in timestamp_terms[:100]:
+        term = timestamp_relation.term
+        try:
+            return decode_environmental_term(term)
+        except ValueError:
+            continue
+    return None

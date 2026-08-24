@@ -53,6 +53,14 @@ Equal encoded values share the same `Symbol` record. Semantic query helpers
 validate the ordered shape and decode Terms into environmental observations for
 the rest of the application. No decoded observation index is persisted.
 
+The encoded observation timestamp is also the substrate retrieval key. History
+queries begin with timestamp-bearing `TermSymbol` rows at order 1, and the
+latest-reading query orders those rows descending before loading the matching
+Term symbols. This avoids scanning and decoding the complete history for a
+single latest reading. A persistence-time `created_at` field is not required:
+the measurement timestamp remains authoritative for imported, delayed, or
+out-of-order readings.
+
 Air-quality assessments are independent Terms containing a timestamp and an
 integer percentage from 0 through 100. They are not nullable fields on
 environmental observations and are not collected until that semantic profile
