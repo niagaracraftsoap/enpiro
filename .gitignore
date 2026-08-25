@@ -18,6 +18,11 @@ staticfiles/
 media/
 *.log
 
+# Native build dependencies and outputs
+native/.sqlite-dev/
+native/build/
+native-install/
+
 # Editors and operating systems
 .idea/
 .vscode/

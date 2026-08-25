@@ -99,9 +99,9 @@ substrate candidates. Live latest-reading polling begins on its regular
 30-second interval rather than duplicating the initial page request.
 
 The browser cache is a read-through copy, not the source of truth. Cached
-observations render immediately, then the selected range is reconciled with
-the server on page load, periodic polling, network recovery, and return
-from a background tab. Graph points are positioned by their observation
+observations for the selected time range render immediately, then that range
+is reconciled with the server on page load, periodic polling, network recovery,
+and return from a background tab. Graph points are positioned by their observation
 timestamps so missed intervals remain visible instead of being compressed.
 Observed lines stop when consecutive samples are missing. Rough dashed waves
 mark those intervals and the chart labels them explicitly as non-data rather

@@ -49,6 +49,10 @@
     return { ...reading, observed_ms: observedMs };
   }
 
+  function withoutObservedMs(records) {
+    return records.map(({ observed_ms: _observedMs, ...reading }) => reading);
+  }
+
   async function putMany(readings) {
     if (!readings.length) return;
     await withStore("readwrite", store => {
@@ -68,7 +72,25 @@
       "readonly",
       store => store.index("observed_ms").getAll(),
     );
-    return records.map(({ observed_ms: _observedMs, ...reading }) => reading);
+    return withoutObservedMs(records);
+  }
+
+  async function getRange(startMs, endMs) {
+    const records = await withStore(
+      "readonly",
+      store => {
+        const index = store.index("observed_ms");
+        const hasStart = Number.isFinite(startMs);
+        const hasEnd = Number.isFinite(endMs);
+        if (hasStart && hasEnd) {
+          return index.getAll(IDBKeyRange.bound(startMs, endMs));
+        }
+        if (hasStart) return index.getAll(IDBKeyRange.lowerBound(startMs));
+        if (hasEnd) return index.getAll(IDBKeyRange.upperBound(endMs));
+        return index.getAll();
+      },
+    );
+    return withoutObservedMs(records);
   }
 
   async function clear() {
@@ -94,6 +116,7 @@
 
   window.EnpiroDataCache = {
     getAll,
+    getRange,
     putMany,
     deleteMany,
     clear,

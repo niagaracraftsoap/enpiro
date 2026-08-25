@@ -157,6 +157,12 @@ class TermSymbol(models.Model):
     order = models.PositiveIntegerField()
 
     class Meta:
+        indexes = [
+            models.Index(
+                fields=["order", "symbol", "term"],
+                name="core_ts_ord_sym_term_idx",
+            ),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["term", "order"],

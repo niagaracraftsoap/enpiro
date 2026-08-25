@@ -757,16 +757,19 @@ async function initializeData() {
   )).at(-1);
   renderLastRecorded(initialLatest?.recorded_at);
   try {
-    mergeObservations(await window.EnpiroDataCache?.getAll() || []);
-  } catch (_cacheError) {
-    // Private browsing modes may make IndexedDB unavailable; the network remains usable.
-  }
-  try {
     restoreRangePreference(
       await window.EnpiroDataCache?.getPreference(rangePreferenceKey),
     );
   } catch (_cacheError) {
     restoreRangePreference(null);
+  }
+  try {
+    const { start, end } = selectedBounds();
+    mergeObservations(
+      await window.EnpiroDataCache?.getRange(start, end) || [],
+    );
+  } catch (_cacheError) {
+    // Private browsing modes may make IndexedDB unavailable; the network remains usable.
   }
   rebuildMetricRows();
   document.querySelector("#active-range-label").textContent = describeRange();
